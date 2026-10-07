@@ -43,7 +43,14 @@ export class Input {
       if (!this.enabled) return;
       this.mouseDown = true;
       this.lookLast = { x: e.clientX, y: e.clientY };
-      if (!this.isTouch && document.pointerLockElement !== el) el.requestPointerLock?.();
+      if (!this.isTouch && document.pointerLockElement !== el) {
+        try {
+          const r = el.requestPointerLock?.() as unknown as Promise<void> | undefined;
+          r?.catch?.(() => {});
+        } catch {
+          // Pointer lock is optional; click-drag look still works.
+        }
+      }
     });
     window.addEventListener('mouseup', () => (this.mouseDown = false));
     window.addEventListener('mousemove', (e) => {
