@@ -1,4 +1,6 @@
+/* The UI is drawn light; never let a dark color-scheme turn button text white. */
 :root {
+  color-scheme: only light;
   --ink: #1d1d1d;
   --cream: #fff8e7;
   --orange: #ff6a00;
@@ -29,7 +31,7 @@ html, body {
 #app { position: fixed; inset: 0; }
 canvas { display: block; width: 100%; height: 100%; }
 
-button { font-family: var(--display); cursor: pointer; border: none; }
+button { font-family: var(--display); cursor: pointer; border: none; color: var(--ink); -webkit-appearance: none; appearance: none; }
 
 /* ---------- Menus ---------- */
 .screen {
@@ -138,8 +140,12 @@ button { font-family: var(--display); cursor: pointer; border: none; }
 .solved { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-12deg); border: 2px solid #b71c1c; color: #b71c1c; background: rgba(255, 255, 255, 0.8); font-family: var(--display); font-size: 12px; padding: 1px 6px; white-space: nowrap; }
 .card.hidden-map { background: #2b2140; color: #f2c94c; }
 .card.hidden-map.sel { background: #4a3770; }
+.star-help { display: flex; gap: 8px; align-items: center; background: #fff3c4; border: 2px solid var(--ink); border-radius: 12px; padding: 6px 10px; font-size: 13px; margin-bottom: 6px; }
+.star-help .st { width: 22px; height: 22px; flex: 0 0 auto; }
 .secret-line { margin-top: 6px; font-weight: 800; color: #6a1b9a; }
-.back-btn { width: 40px; height: 40px; border-radius: 12px; background: #fff; border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink); font-size: 28px; line-height: 1; padding: 0 0 4px; flex: 0 0 auto; }
+.back-btn { height: 40px; border-radius: 12px; background: #fff; border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink); font-size: 16px; padding: 0 12px 0 10px; flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+.back-btn:active { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); }
+.chev { width: 10px; height: 10px; border-left: 3px solid var(--ink); border-bottom: 3px solid var(--ink); transform: rotate(45deg); margin-left: 4px; }
 .sel-head h2 { flex: 1; margin-left: 10px; }
 .st { display: inline-block; width: 14px; height: 14px; background: rgba(0, 0, 0, 0.2); clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); vertical-align: -1px; }
 .st.on { background: #f5b700; }
@@ -295,6 +301,12 @@ button { font-family: var(--display); cursor: pointer; border: none; }
 .boop-btn { grid-column: 1; grid-row: 1; opacity: 0.55; }
 .boop-btn.ready { background: #ff8fd0; opacity: 1; animation: pulse 0.6s infinite; }
 .jump-btn { grid-column: 1; grid-row: 2; }
+.orange-btn { display: none; position: absolute; right: 0; bottom: calc(100% + 12px); width: 72px; height: 72px; font-size: 13px; background: #fff; }
+.orange-btn span { position: relative; z-index: 1; }
+.orange-fill { position: absolute; left: 0; right: 0; bottom: 0; background: #ff6a00; }
+.orange-btn.ready { animation: pulse 0.9s infinite; color: #fff; -webkit-text-stroke: 0.5px var(--ink); }
+.orange-btn.active { color: #fff; }
+.hud.desktop .orange-btn::after { content: ' (R)'; position: relative; z-index: 1; }
 @keyframes pulse { 0%, 100% { scale: 1; } 50% { scale: 1.08; } }
 
 .hud.desktop .act-btn { width: 64px; height: 64px; font-size: 12px; }

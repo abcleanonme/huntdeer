@@ -149,11 +149,21 @@ export function buildAnimal(id: AnimalId, color: number, accent: number, scale =
     height = 1.5;
   } else if (id === 'skunk') {
     head.add(mesh(box(0.06, 0.06, 0.4), accent, 0, 0.18, 0.1));
+    // Big blocky tail: rises from the rump, then a bushy block curling forward over the back.
     const tail = new THREE.Group();
-    tail.position.set(0, bodyY + 0.1, -d.bl / 2);
-    tail.add(mesh(sphere(0.32, 1), color, 0, 0.45, -0.25));
-    tail.add(mesh(box(0.12, 0.6, 0.12), accent, 0, 0.5, -0.4));
-    tail.add(mesh(sphere(0.3, 1), color, 0, 0.9, -0.3));
+    tail.position.set(0, bodyY + 0.05, -d.bl / 2 + 0.08);
+    const base = mesh(box(0.26, 0.55, 0.26), color, 0, 0.18, -0.12);
+    base.rotation.x = -0.55;
+    const bush = mesh(box(0.46, 0.6, 0.44), color, 0, 0.66, -0.3);
+    bush.rotation.x = -0.15;
+    const curl = mesh(box(0.44, 0.34, 0.5), color, 0, 1.02, -0.1);
+    curl.rotation.x = 0.35;
+    // White stripe running up the back of the tail and over the curl.
+    const s1 = mesh(box(0.16, 0.6, 0.04), accent, 0, 0.66, -0.53);
+    s1.rotation.x = -0.15;
+    const s2 = mesh(box(0.16, 0.04, 0.5), accent, 0, 1.2, -0.08);
+    s2.rotation.x = 0.35;
+    tail.add(base, bush, curl, s1, s2);
     body.add(tail);
     height = 1.7;
   } else if (id === 'bear') {
@@ -255,13 +265,27 @@ export function buildHunter(kind: HunterKind, look: HunterLook = DEFAULT_LOOK): 
   const torsoW = 0.62 + 0.12 * look.belly;
 
   if (kind === 'ebike') {
+    // Fat-tire e-bike: frame tubes, battery pack, fenders, handlebars and a headlight.
     const bike = new THREE.Group();
-    bike.add(mesh(cyl(0.45, 0.45, 0.12, 12).rotateZ(Math.PI / 2), 0x222222, 0, 0.45, 0.8));
-    bike.add(mesh(cyl(0.45, 0.45, 0.12, 12).rotateZ(Math.PI / 2), 0x222222, 0, 0.45, -0.8));
-    bike.add(mesh(box(0.15, 0.15, 1.5), vest, 0, 0.8, 0));
-    bike.add(mesh(box(0.3, 0.35, 0.5), 0x333333, 0, 0.7, 0));
-    bike.add(mesh(box(0.7, 0.06, 0.06), 0x888888, 0, 1.4, 0.7));
-    bike.add(mesh(box(0.1, 0.6, 0.1), 0x888888, 0, 1.1, 0.7));
+    const frame = vest;
+    for (const z of [0.85, -0.85]) {
+      bike.add(mesh(cyl(0.46, 0.46, 0.2, 12).rotateZ(Math.PI / 2), 0x1a1a1a, 0, 0.46, z));
+      bike.add(mesh(cyl(0.22, 0.22, 0.22, 8).rotateZ(Math.PI / 2), 0x9e9e9e, 0, 0.46, z, false));
+      bike.add(mesh(box(0.26, 0.05, 0.75), 0x2a2a2a, 0, 0.98, z * 1.02)); // fenders
+    }
+    bike.add(segment(new THREE.Vector3(0, 0.5, -0.1), new THREE.Vector3(0, 1.15, 0.65), 0.06, 0.06, frame));
+    bike.add(segment(new THREE.Vector3(0, 1.0, -0.35), new THREE.Vector3(0, 1.15, 0.65), 0.06, 0.06, frame));
+    bike.add(segment(new THREE.Vector3(0, 0.5, -0.1), new THREE.Vector3(0, 1.05, -0.35), 0.06, 0.06, frame));
+    bike.add(segment(new THREE.Vector3(0, 0.46, -0.85), new THREE.Vector3(0, 0.5, -0.1), 0.05, 0.05, frame));
+    bike.add(segment(new THREE.Vector3(0, 0.46, 0.85), new THREE.Vector3(0, 1.3, 0.7), 0.05, 0.05, 0x888888));
+    bike.add(mesh(box(0.22, 0.26, 0.6), 0x263238, 0, 0.86, 0.18)); // battery
+    bike.add(mesh(box(0.23, 0.05, 0.12), 0x76ff03, 0, 1.0, 0.4, false)); // charge LEDs
+    bike.add(mesh(box(0.3, 0.1, 0.35), 0x111111, 0, 1.12, -0.38)); // seat
+    bike.add(mesh(box(0.75, 0.06, 0.06), 0x888888, 0, 1.38, 0.7));
+    for (const sx of [-1, 1]) bike.add(mesh(box(0.08, 0.08, 0.14), 0x111111, 0.36 * sx, 1.38, 0.7));
+    bike.add(mesh(box(0.14, 0.12, 0.1), 0xfff6c0, 0, 1.22, 0.86, false)); // headlight
+    bike.add(mesh(box(0.32, 0.06, 0.35), 0x333333, 0, 0.82, -0.85)); // rear rack
+    bike.add(mesh(box(0.06, 0.06, 0.22), 0x888888, 0.18, 0.4, 0.05, false)); // pedal
     body.add(bike);
   }
   if (seated) {
@@ -605,47 +629,71 @@ export function buildLantern(): THREE.Group {
   return g;
 }
 
+/** A cylinder running from point a to point b, so bent trunks stay connected. */
+function segment(a: THREE.Vector3, b: THREE.Vector3, rTop: number, rBottom: number, color: number, sides = 6) {
+  const len = a.distanceTo(b);
+  const m = mesh(cyl(rTop, rBottom, len, sides), color);
+  m.position.copy(a).add(b).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+  return m;
+}
+
 export function buildTree(style: MapDef['treeStyle'], rng: () => number): THREE.Group {
   const g = new THREE.Group();
   const s = 0.8 + rng() * 0.7;
   if (style === 'pine' || style === 'snowpine') {
-    g.add(mesh(cyl(0.25, 0.35, 2, 5), 0x6b4423, 0, 1, 0));
+    // Trunk starts below ground so it never floats on a slope, and runs up into the top cone.
+    g.add(mesh(cyl(0.2, 0.38, 4.2, 6), 0x6b4423, 0, 1.4, 0));
     const greens = [0x2f6b3a, 0x3a7d44, 0x285c32];
     for (let i = 0; i < 3; i++) {
-      const c = mesh(cone(2.2 - i * 0.55, 2.4, 7), greens[i % 3], 0, 2.3 + i * 1.4, 0);
-      g.add(c);
-      if (style === 'snowpine') g.add(mesh(cone(1.3 - i * 0.35, 1.0, 7), 0xffffff, 0, 3.1 + i * 1.4, 0));
+      g.add(mesh(cone(2.2 - i * 0.55, 2.4, 7), greens[i % 3], 0, 2.3 + i * 1.3, 0));
+      if (style === 'snowpine') g.add(mesh(cone(1.25 - i * 0.33, 1.0, 7), 0xffffff, 0, 3.05 + i * 1.3, 0));
     }
   } else if (style === 'palm') {
-    const lean = (rng() - 0.5) * 0.4;
+    // Gently curved trunk built from overlapping segments that meet end to end.
+    const lean = (rng() - 0.5) * 1.6;
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 5; i++) {
+      const t = i / 5;
+      pts.push(new THREE.Vector3(lean * t * t, -0.4 + t * 6.6, 0));
+    }
     for (let i = 0; i < 5; i++) {
-      g.add(mesh(cyl(0.22, 0.28, 1.3, 5), 0x8b6b3d, lean * i, 0.65 + i * 1.2, 0));
+      g.add(segment(pts[i], pts[i + 1].clone().lerp(pts[i], -0.08), 0.2 - i * 0.01, 0.3 - i * 0.015, i % 2 ? 0x8b6b3d : 0x7a5c33));
     }
     const top = new THREE.Group();
-    top.position.set(lean * 5, 6.2, 0);
-    for (let i = 0; i < 6; i++) {
-      const leaf = mesh(box(0.7, 0.08, 3.2), i % 2 ? 0x2e8b3a : 0x3fa34d, 0, 0, 1.4);
+    top.position.copy(pts[5]);
+    top.add(mesh(sphere(0.32, 0), 0x6b5a2a, 0, 0.05, 0));
+    for (let i = 0; i < 7; i++) {
+      // Each frond starts at the crown and droops outward.
       const p = new THREE.Group();
-      p.rotation.y = (i / 6) * Math.PI * 2;
-      leaf.rotation.x = 0.45;
-      p.add(leaf);
+      p.rotation.y = (i / 7) * Math.PI * 2 + rng() * 0.3;
+      const inner = mesh(box(0.7, 0.08, 1.7), i % 2 ? 0x2e8b3a : 0x3fa34d, 0, 0.1, 0.8);
+      inner.rotation.x = -0.25;
+      const outer = mesh(box(0.55, 0.07, 1.6), i % 2 ? 0x2e8b3a : 0x3fa34d, 0, -0.35, 2.2);
+      outer.rotation.x = 0.55;
+      p.add(inner, outer);
       top.add(p);
     }
-    top.add(mesh(sphere(0.25, 0), 0x6b4423, 0.2, -0.3, 0.2));
-    top.add(mesh(sphere(0.25, 0), 0x6b4423, -0.2, -0.3, 0));
+    for (const [x, z] of [[0.22, 0.15], [-0.2, 0.12], [0, -0.24]]) top.add(mesh(sphere(0.2, 0), 0x5a3d1e, x, -0.3, z));
     g.add(top);
   } else {
-    // willow / swamp tree
-    g.add(mesh(cyl(0.35, 0.6, 3.5, 6), 0x5b4a32, 0, 1.75, 0));
-    g.add(mesh(sphere(2.3, 1), 0x6b8a3a, 0, 4.3, 0));
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      g.add(mesh(box(0.4, 2.2, 0.4), 0x7d9a45, Math.cos(a) * 2, 3.0, Math.sin(a) * 2));
+    // Swamp willow: thick trunk, lumpy canopy, and curtains of vines hanging from the canopy edge.
+    g.add(mesh(cyl(0.35, 0.65, 4.4, 6), 0x5b4a32, 0, 1.6, 0));
+    g.add(mesh(sphere(2.1, 1), 0x6b8a3a, 0, 4.4, 0));
+    g.add(mesh(sphere(1.5, 1), 0x7a9a45, 0.9, 5.1, 0.4));
+    g.add(mesh(sphere(1.4, 1), 0x5f7d33, -0.8, 4.9, -0.5));
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2 + rng() * 0.3;
+      const r = 1.75;
+      const len = 1.6 + rng() * 1.0;
+      g.add(mesh(box(0.28, len, 0.28), 0x7d9a45, Math.cos(a) * r, 3.9 - len / 2, Math.sin(a) * r));
     }
   }
   g.scale.setScalar(s);
   g.rotation.y = rng() * Math.PI * 2;
   g.userData.radius = (style === 'palm' ? 0.35 : 0.5) * s;
+  // Branches block sight further out than the trunk blocks movement.
+  g.userData.sightR = (style === 'palm' ? 0.55 : style === 'willow' ? 1.9 : 1.35) * s;
   return g;
 }
 
@@ -680,28 +728,171 @@ export function buildFood(color: number): THREE.Group {
   return g;
 }
 
-export function buildDecorations(kind: 'stand' | 'truck' | 'sign', rng: () => number): THREE.Group {
+const TRUCK_COLORS = [0xb03a2e, 0x2e4a7a, 0x3d5a3a, 0x8a6d3b, 0xe0e0e0, 0x2b2b2b, 0x6b2e5e];
+
+/** A lifted pickup truck with a bed, cab windows, lights, mud flaps and a light bar. */
+export function buildTruck(rng: () => number, color = TRUCK_COLORS[Math.floor(rng() * TRUCK_COLORS.length)]): THREE.Group {
   const g = new THREE.Group();
-  if (kind === 'stand') {
-    for (const [x, z] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]]) g.add(mesh(box(0.15, 4, 0.15), 0x6b5a45, x, 2, z));
-    g.add(mesh(box(2, 0.15, 2), 0x6b5a45, 0, 4, 0));
-    g.add(mesh(box(2, 0.6, 0.1), 0x4d5a2e, 0, 4.4, 1));
-    g.userData.radius = 1.2;
-  } else if (kind === 'truck') {
-    g.add(mesh(box(2.2, 1.2, 4.5), rng() > 0.5 ? 0xb03a2e : 0x2e4a7a, 0, 1.1, 0));
-    g.add(mesh(box(2.1, 0.9, 1.8), 0x9fc5e8, 0, 2.1, 0.7));
-    for (const [x, z] of [[-1.1, 1.4], [1.1, 1.4], [-1.1, -1.4], [1.1, -1.4]]) g.add(mesh(cyl(0.5, 0.5, 0.4, 8).rotateZ(Math.PI / 2), 0x111111, x, 0.5, z));
-    g.userData.radius = 2.4;
-  } else {
-    g.add(mesh(box(0.2, 2, 0.2), 0x6b5a45, 0, 1, 0));
-    g.add(mesh(box(2.2, 1, 0.1), 0xf2c94c, 0, 2, 0));
-    g.userData.radius = 0.4;
+  const trim = 0x2a2a2a;
+  const chrome = 0xc8c8c8;
+  const glass = 0x9fc5e8;
+  // Frame and body. The truck points toward +z.
+  g.add(mesh(box(2.0, 0.3, 5.0), trim, 0, 0.75, 0));
+  g.add(mesh(box(2.3, 0.75, 1.9), color, 0, 1.3, 1.65)); // hood
+  g.add(mesh(box(2.3, 1.2, 1.5), color, 0, 1.5, 0.1)); // cab lower
+  g.add(mesh(box(2.1, 0.75, 1.35), glass, 0, 2.45, 0.1)); // cab windows
+  g.add(mesh(box(2.2, 0.1, 1.45), color, 0, 2.86, 0.1)); // roof
+  g.add(mesh(box(2.12, 0.75, 0.12), color, 0, 2.45, 0.1)); // B pillar
+  g.add(mesh(box(2.12, 0.62, 0.1), glass, 0, 2.3, 0.82).rotateX(-0.35)); // windshield
+  // Bed with walls and tailgate.
+  g.add(mesh(box(2.3, 0.2, 2.0), color, 0, 1.0, -1.65));
+  for (const sx of [-1, 1]) g.add(mesh(box(0.12, 0.7, 2.0), color, 1.09 * sx, 1.45, -1.65));
+  g.add(mesh(box(2.3, 0.7, 0.12), color, 0, 1.45, -2.6));
+  g.add(mesh(box(2.06, 0.06, 1.9), trim, 0, 1.12, -1.65));
+  // Stripe, bumpers, grille, lights.
+  for (const sx of [-1, 1]) g.add(mesh(box(0.02, 0.14, 4.6), 0xf2f2f2, 1.16 * sx, 1.55, 0));
+  g.add(mesh(box(2.4, 0.3, 0.2), chrome, 0, 0.95, 2.65));
+  g.add(mesh(box(2.4, 0.25, 0.2), trim, 0, 0.95, -2.7));
+  g.add(mesh(box(1.4, 0.45, 0.06), trim, 0, 1.38, 2.61));
+  for (let i = -2; i <= 2; i++) g.add(mesh(box(0.06, 0.4, 0.07), chrome, i * 0.26, 1.38, 2.63, false));
+  for (const sx of [-1, 1]) {
+    g.add(mesh(box(0.35, 0.22, 0.06), 0xfff6c0, 0.92 * sx, 1.42, 2.62, false));
+    g.add(mesh(box(0.22, 0.35, 0.06), 0xd32f2f, 0.98 * sx, 1.45, -2.68, false));
+    g.add(mesh(box(0.1, 0.22, 0.3), trim, 1.22 * sx, 2.3, 0.75)); // mirrors
+    g.add(mesh(box(0.3, 0.05, 0.08), trim, 1.17 * sx, 1.75, 0.3, false)); // door handles
   }
+  // Roof light bar, because of course.
+  g.add(mesh(box(1.7, 0.18, 0.25), trim, 0, 3.0, 0.5));
+  for (let i = -3; i <= 3; i++) g.add(mesh(box(0.18, 0.12, 0.05), 0xfff6c0, i * 0.23, 3.0, 0.64, false));
+  // Wheels with hubs and arches.
+  for (const [x, z] of [[-1.05, 1.6], [1.05, 1.6], [-1.05, -1.6], [1.05, -1.6]]) {
+    g.add(mesh(cyl(0.55, 0.55, 0.45, 10).rotateZ(Math.PI / 2), 0x151515, x, 0.55, z));
+    g.add(mesh(cyl(0.26, 0.26, 0.47, 6).rotateZ(Math.PI / 2), chrome, x, 0.55, z, false));
+    g.add(mesh(box(0.5, 0.15, 1.35), trim, x * 1.06, 1.12, z));
+    if (z < 0) g.add(mesh(box(0.4, 0.4, 0.04), trim, x * 1.02, 0.55, z - 0.75));
+  }
+  // Something in the bed: a cooler or a spare tire.
+  if (rng() < 0.5) {
+    g.add(mesh(box(0.8, 0.45, 0.5), 0x1e88e5, 0.4, 1.4, -1.3));
+    g.add(mesh(box(0.84, 0.1, 0.54), 0xffffff, 0.4, 1.66, -1.3));
+  } else {
+    g.add(mesh(cyl(0.5, 0.5, 0.3, 10), 0x151515, -0.4, 1.32, -1.9));
+  }
+  g.userData.radius = 2.6;
+  return g;
+}
+
+/**
+ * Hunting tree stand: four legs, a platform 4 m up with a seat and railing, and a ladder on the +z side.
+ * Hunters climb it; the player can boop it.
+ */
+export const STAND_HEIGHT = 4;
+export function buildTreeStand(): THREE.Group {
+  const g = new THREE.Group();
+  const wood = 0x6b5a45;
+  const dark = 0x4d3f30;
+  const camo = 0x4d5a2e;
+  const H = STAND_HEIGHT;
+  for (const [x, z] of [[-0.85, -0.85], [0.85, -0.85], [-0.85, 0.85], [0.85, 0.85]]) {
+    const leg = mesh(box(0.16, H + 0.2, 0.16), wood, x * 1.15, H / 2, z * 1.15);
+    leg.rotation.set(z * 0.06, 0, -x * 0.06);
+    g.add(leg);
+  }
+  // Cross braces
+  for (const y of [1.3, 2.7]) {
+    for (const z of [-1, 1]) g.add(mesh(box(2.0, 0.1, 0.08), dark, 0, y, z * 0.92));
+    for (const x of [-1, 1]) g.add(mesh(box(0.08, 0.1, 2.0), dark, x * 0.92, y, 0));
+  }
+  g.add(mesh(box(2.2, 0.16, 2.2), wood, 0, H, 0));
+  // Railing with a camo skirt on three sides, open on the ladder side.
+  for (const [x, z, w, d] of [[0, -1.05, 2.2, 0.08], [-1.05, 0, 0.08, 2.2], [1.05, 0, 0.08, 2.2]] as const) {
+    g.add(mesh(box(w, 0.08, d), dark, x, H + 0.95, z));
+    g.add(mesh(box(w * 0.98 || 0.06, 0.6, d * 0.98 || 0.06), camo, x, H + 0.45, z));
+  }
+  for (const [x, z] of [[-1.05, -1.05], [1.05, -1.05], [-1.05, 1.05], [1.05, 1.05]]) g.add(mesh(box(0.08, 1.0, 0.08), dark, x, H + 0.5, z));
+  // Seat
+  g.add(mesh(box(0.8, 0.1, 0.6), dark, 0, H + 0.55, -0.6));
+  g.add(mesh(box(0.8, 0.6, 0.08), dark, 0, H + 0.85, -0.92));
+  // Ladder, leaning in on the +z side.
+  const ladder = new THREE.Group();
+  ladder.position.set(0, 0, 1.75);
+  ladder.rotation.x = -0.2;
+  const len = H / Math.cos(0.2);
+  for (const x of [-0.32, 0.32]) ladder.add(mesh(box(0.09, len, 0.09), wood, x, len / 2, 0));
+  for (let y = 0.4; y < len - 0.1; y += 0.45) ladder.add(mesh(box(0.64, 0.07, 0.07), dark, 0, y, 0));
+  g.add(ladder);
+  g.userData.radius = 1.3;
+  return g;
+}
+
+/** A hunter's lunch: a cooler bag and a very large sandwich. */
+export function buildLunch(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(box(0.42, 0.3, 0.3), 0xc62828, 0, 0.15, 0));
+  g.add(mesh(box(0.44, 0.06, 0.32), 0xffffff, 0, 0.32, 0));
+  g.add(mesh(box(0.26, 0.05, 0.08), 0x222222, 0, 0.38, 0));
+  const sand = new THREE.Group();
+  sand.position.set(0.42, 0, 0.05);
+  sand.add(mesh(box(0.36, 0.07, 0.3), 0xe0b46a, 0, 0.04, 0));
+  sand.add(mesh(box(0.38, 0.04, 0.32), 0x6abf4b, 0, 0.1, 0));
+  sand.add(mesh(box(0.36, 0.05, 0.3), 0xe57373, 0, 0.14, 0));
+  sand.add(mesh(box(0.36, 0.07, 0.3), 0xe0b46a, 0, 0.2, 0));
+  g.add(sand);
+  return g;
+}
+
+/** Floating pickup: a folded blaze-orange vest. */
+export function buildVestPickup(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(box(0.6, 0.14, 0.5), 0xff6a00, 0, 0, 0));
+  g.add(mesh(box(0.62, 0.04, 0.08), 0xfff176, 0, 0.08, 0.1, false));
+  g.add(mesh(box(0.62, 0.04, 0.08), 0xfff176, 0, 0.08, -0.1, false));
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.75, 0.05, 4, 20).rotateX(Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0xff8f00, transparent: true, opacity: 0.8 }),
+  );
+  ring.position.y = -0.3;
+  g.add(ring);
+  return g;
+}
+
+/** Blaze-orange vest and cap that the player's critter wears while disguised. */
+export function buildDisguise(rig: Rig): THREE.Group {
+  const g = new THREE.Group();
+  // Measure the body in the rig's own space, not wherever it is standing in the world.
+  const saved = { p: rig.root.position.clone(), q: rig.root.quaternion.clone() };
+  rig.root.position.set(0, 0, 0);
+  rig.root.quaternion.identity();
+  rig.root.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(rig.body);
+  rig.root.position.copy(saved.p);
+  rig.root.quaternion.copy(saved.q);
+  rig.root.updateMatrixWorld(true);
+  const size = b.getSize(new THREE.Vector3());
+  const c = b.getCenter(new THREE.Vector3());
+  const s = 1 / rig.root.scale.x;
+  const vest = mesh(box(size.x * 1.06 * s, size.y * 0.3 * s, size.z * 0.5 * s), 0xff6a00, c.x * s, (b.min.y + size.y * 0.55) * s, c.z * s);
+  g.add(vest);
+  g.add(mesh(box(size.x * 1.08 * s, 0.05 * s, size.z * 0.1 * s), 0xfff176, c.x * s, (b.min.y + size.y * 0.6) * s, c.z * s, false));
+  const cap = new THREE.Group();
+  cap.add(mesh(box(0.45, 0.2, 0.45), 0xff6a00, 0, 0, 0));
+  cap.add(mesh(box(0.45, 0.04, 0.25), 0xff6a00, 0, -0.08, 0.3));
+  cap.position.set(c.x * s, b.max.y * s + 0.05, (c.z + size.z * 0.35) * s);
+  g.add(cap);
+  return g;
+}
+
+export function buildDecorations(kind: 'stand' | 'truck' | 'sign', rng: () => number): THREE.Group {
+  if (kind === 'truck') return buildTruck(rng);
+  if (kind === 'stand') return buildTreeStand();
+  const g = new THREE.Group();
+  g.add(mesh(box(0.2, 2, 0.2), 0x6b5a45, 0, 1, 0));
+  g.add(mesh(box(2.2, 1, 0.1), 0xf2c94c, 0, 2, 0));
+  g.userData.radius = 0.4;
   g.rotation.y = rng() * Math.PI * 2;
   return g;
 }
 
-/** Text sprite used for speech bubbles and "!" markers. */
 export function textSprite(text: string, opts: { bg?: string; fg?: string; size?: number } = {}): THREE.Sprite {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d')!;

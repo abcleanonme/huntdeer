@@ -145,6 +145,13 @@ export class Hunter {
   /** E-bike with its charger unplugged. */
   unplugged = false;
   dog: Dog | null = null;
+  /** Tree stand: which one (index into the game's stands), and where the hunter is with it. */
+  standIdx = -1;
+  standPhase: 'none' | 'walk' | 'climb' | 'up' | 'fall' = 'none';
+  /** Height above the ground (on the ladder or the platform). */
+  elev = 0;
+  fallV = 0;
+  fallFrom: HState = 'patrol';
   drone: Drone | null = null;
   // Trophy King only
   hatsLeft = 0;
@@ -213,7 +220,7 @@ export class Hunter {
 
   /** Stationary hunters never walk anywhere. */
   get stationary() {
-    return this.kind === 'ghillie' || this.kind === 'drone';
+    return this.kind === 'ghillie' || this.kind === 'drone' || this.standPhase === 'up' || this.standPhase === 'climb' || this.standPhase === 'fall';
   }
 
   get forward() {
@@ -240,7 +247,10 @@ export class Hunter {
 
   /** Not currently in the game (ran home to the truck, or out cold) for the purposes of noticing anything. */
   get oblivious() {
-    return this.state === 'stunned' || this.state === 'stinky' || this.state === 'sleep' || this.state === 'flee' || this.state === 'hidden';
+    return (
+      this.state === 'stunned' || this.state === 'stinky' || this.state === 'sleep' || this.state === 'flee' || this.state === 'hidden' ||
+      this.standPhase === 'climb' || this.standPhase === 'fall'
+    );
   }
 
   eye() {

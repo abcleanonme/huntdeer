@@ -96,7 +96,7 @@ export class Ui {
     const animalCards = ANIMALS.filter((a) => !a.unlockSecret || save.kingDefeated || save.secretsFound.length > 0)
       .map((a) => {
         const ok = animalUnlocked(save, a);
-        const how = a.unlockSecret ? 'Somewhere, a moose waits' : `${a.unlockStars} stars to unlock`;
+        const how = a.unlockSecret ? 'Somewhere, a moose waits' : `Needs ${a.unlockStars} stars`;
         return `<button class="card animal ${ok ? '' : 'locked'} ${a.id === this.selAnimal ? 'sel' : ''}" data-id="${a.id}" ${ok ? '' : 'disabled'}>
           <img class="portrait" src="${ok ? animalPortrait(a.id) : lockedPortrait(a.id)}" alt="" />
           <div class="name">${ok ? a.name : '???'}</div>
@@ -109,7 +109,7 @@ export class Ui {
       .map((m) => {
         const ok = mapUnlocked(save, m);
         const st = save.stars[m.id] ?? 0;
-        const sub = ok ? (m.hidden ? (save.kingDefeated ? 'Dethroned' : 'Gala night') : starStr(st)) : m.hidden ? 'Follow the clues' : `${m.unlockStars} stars to unlock`;
+        const sub = ok ? (m.hidden ? (save.kingDefeated ? 'Dethroned' : 'Gala night') : starStr(st)) : m.hidden ? 'Follow the clues' : `Needs ${m.unlockStars} stars`;
         const solved = m.secret && save.secretsDone.includes(m.id);
         return `<button class="card map ${ok ? '' : 'locked'} ${m.id === this.selMap ? 'sel' : ''} ${m.hidden ? 'hidden-map' : ''}" data-id="${m.id}" ${ok ? '' : 'disabled'}>
           <div class="swatch" style="background:linear-gradient(${hex(m.sky)} 0 45%, ${hex(m.ground)} 45%)">${solved ? '<span class="solved">CASE CLOSED</span>' : ''}</div>
@@ -131,7 +131,8 @@ export class Ui {
 
     this.show(
       `<div class="select">
-        <div class="sel-head"><button class="back-btn back" aria-label="Back">&lsaquo;</button><h2>Pick your critter</h2><div class="stars-total"><i class="st on"></i> ${stars} / ${mainMaps.length * 3}</div></div>
+        <div class="sel-head"><button class="back-btn back" aria-label="Back"><i class="chev"></i>Back</button><h2>Pick your critter</h2><div class="stars-total"><i class="st on"></i> ${stars} / ${mainMaps.length * 3}</div></div>
+        <div class="star-help"><i class="st on"></i><span>Each map awards up to <b>3 stars</b>: escape, take no hits, and beat the par time. Stars unlock new critters and maps. You have <b>${stars}</b>${nextUnlock(stars)}.</span></div>
         <div class="row">${animalCards}</div>
         <div class="detail">
           <b>${a.name}</b> <i>${a.tagline}</i><br/>
@@ -183,7 +184,7 @@ export class Ui {
       .join('');
     this.show(
       `<div class="select">
-        <div class="sel-head"><button class="back-btn back" aria-label="Back">&lsaquo;</button><h2>Field Guide: North American Hunters</h2><div></div></div>
+        <div class="sel-head"><button class="back-btn back" aria-label="Back"><i class="chev"></i>Back</button><h2>Field Guide: North American Hunters</h2><div></div></div>
         <p class="small">Know your enemy. Bushes hide you, sprinting is loud, and hunters can't see behind them. Sneak up behind a hunter (or catch one napping) and BOOP to knock their hat off, then grab it for your log.</p>
         ${rows}
       </div>`,
@@ -201,7 +202,7 @@ export class Ui {
       : `<p class="empty">No hats yet. Sneak up behind a hunter, press BOOP, then grab the hat they drop.</p>`;
     this.show(
       `<div class="select">
-        <div class="sel-head"><button class="back-btn back" aria-label="Back">&lsaquo;</button><h2>Hunter Log</h2><div></div></div>
+        <div class="sel-head"><button class="back-btn back" aria-label="Back"><i class="chev"></i>Back</button><h2>Hunter Log</h2><div></div></div>
         <div class="log-summary">
           <div><b>${save.totalHats}</b><span>hats collected</span></div>
           <div><b>${kindsLogged}/${REGULAR_KINDS.length + 1}</b><span>species logged</span></div>
@@ -226,7 +227,7 @@ export class Ui {
     }).join('');
     this.show(
       `<div class="select">
-        <div class="sel-head"><button class="back-btn back" aria-label="Back">&lsaquo;</button><h2>Achievements</h2><div class="stars-total">${Object.keys(save.achievements).length}/${ACHIEVEMENTS.length}</div></div>
+        <div class="sel-head"><button class="back-btn back" aria-label="Back"><i class="chev"></i>Back</button><h2>Achievements</h2><div class="stars-total">${Object.keys(save.achievements).length}/${ACHIEVEMENTS.length}</div></div>
         <div class="ach-grid">${cards}</div>
       </div>`,
       'menu',
@@ -251,7 +252,7 @@ export class Ui {
         : '';
     this.show(
       `<div class="select">
-        <div class="sel-head"><button class="back-btn back" aria-label="Back">&lsaquo;</button><h2>Case File</h2><div></div></div>
+        <div class="sel-head"><button class="back-btn back" aria-label="Back"><i class="chev"></i>Back</button><h2>Case File</h2><div></div></div>
         <p class="small">Somebody is organizing these hunters. Piece it together.</p>
         ${pages}${finale}
       </div>`,
@@ -330,6 +331,14 @@ export class Ui {
     this.on('.retry', onRetry);
     this.on('.menu-btn', onMenu);
   }
+}
+
+/** ", next unlock at N stars: X" for the select screen. */
+function nextUnlock(stars: number) {
+  const next = [...ANIMALS.filter((a) => !a.unlockSecret), ...MAPS.filter((m) => !m.hidden)]
+    .filter((x) => x.unlockStars > stars)
+    .sort((x, y) => x.unlockStars - y.unlockStars)[0];
+  return next ? `; next unlock at <b>${next.unlockStars}</b>: ${next.name}` : '; everything is unlocked';
 }
 
 function casePage(title: string, text: string, sub: string) {

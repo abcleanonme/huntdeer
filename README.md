@@ -39,7 +39,8 @@ npm run ios:open      # open in Xcode, pick your team under Signing, then Run
 | Look | Mouse | Drag on the right side |
 | Jump | Space | JUMP |
 | Ability | E | Big ability button |
-| Boop (knock a hunter's hat off from behind) | F | BOOP |
+| Boop (knock a hunter's hat off from behind, or boop a tree stand) | F | BOOP |
+| Wear a hunter's orange (when you have one) | R | ORANGE |
 
 ## What's in the game
 
@@ -63,6 +64,8 @@ npm run ios:open      # open in Xcode, pick your team under Signing, then Run
 - **Houndsman Hank**: his beagle smells you through bushes, but not through water or skunk.
 - **The Trophy King**: you'll see.
 
+Some hunters climb tree stands: they see further and nap more, but nobody looks straight down. Boop the stand and they come down the fast way (half of them dropped a lunch, which heals a heart). Booped hunters sometimes drop their blaze orange: wear it and you're invisible to hunters, dogs and drones for about 20 seconds. You can carry one at a time.
+
 Booped hunters drop their hat. Grab it and they go in the **Hunter Log** with weight, height, their bragging stat and a Doe & Crockett score. Easily spooked hunters run back to their trucks.
 
 **Maps**
@@ -73,7 +76,7 @@ Booped hunters drop their hat. Grab it and they go in the **Hunter Log** with we
 
 **Hidden campaign.** Every map hides something that doesn't belong. Find it and a secret objective starts; finish it to add a page to the Case File. The four chapters lead to a fifth, hidden map and a boss fight. Spoilers in `src/data.ts`.
 
-**Achievements**: 22, including a few secret ones.
+**Achievements**: 24, including a few secret ones.
 
 ## Code layout
 

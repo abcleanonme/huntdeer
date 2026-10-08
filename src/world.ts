@@ -21,6 +21,8 @@ export interface Collider {
   r: number;
   /** Blocks line of sight (trees, rocks). */
   blocksSight: boolean;
+  /** Radius that blocks sight, when wider than the solid part (a pine's branches are wider than its trunk). */
+  sightR?: number;
 }
 
 export interface Pond {
@@ -35,6 +37,8 @@ export class World {
   bushes: { x: number; z: number; r: number }[] = [];
   ponds: Pond[] = [];
   trucks: THREE.Vector3[] = [];
+  /** Tree stands hunters can climb. The flyer stand (near the trucks) is kept free for the forest secret. */
+  stands: { pos: THREE.Vector3; yaw: number; ladder: THREE.Vector3; flyer: boolean }[] = [];
   half: number;
   rng: () => number;
   playerStart = new THREE.Vector3();
@@ -164,9 +168,39 @@ export class World {
       t = Math.max(0, Math.min(1, t));
       const px = ax + dx * t - c.x;
       const pz = az + dz * t - c.z;
-      if (px * px + pz * pz < c.r * c.r) return false;
+      // Standing right under the branches doesn't make the whole tree a wall around you.
+      let r = c.sightR ?? c.r;
+      if (r > c.r && ((ax - c.x) ** 2 + (az - c.z) ** 2 < r * r || (bx - c.x) ** 2 + (bz - c.z) ** 2 < r * r)) r = c.r;
+      if (px * px + pz * pz < r * r) return false;
     }
     return true;
+  }
+
+  /** How many bushes the line from a to b passes through (not counting one standing right at a). */
+  bushesBetween(ax: number, az: number, bx: number, bz: number) {
+    const dx = bx - ax;
+    const dz = bz - az;
+    const len2 = dx * dx + dz * dz;
+    if (len2 < 0.01) return 0;
+    let n = 0;
+    for (const b of this.bushes) {
+      if ((ax - b.x) ** 2 + (az - b.z) ** 2 < b.r * b.r) continue;
+      const t = Math.max(0, Math.min(1, ((b.x - ax) * dx + (b.z - az) * dz) / len2));
+      const px = ax + dx * t - b.x;
+      const pz = az + dz * t - b.z;
+      if (px * px + pz * pz < b.r * b.r * 0.8) n++;
+    }
+    return n;
+  }
+
+  /** True if a point (at a given height) is inside something solid enough to stop an arrow. */
+  solidAt(x: number, y: number, z: number) {
+    for (const c of this.colliders) {
+      if (!c.blocksSight) continue;
+      const r = y - this.height(c.x, c.z) < 7 ? (c.sightR ?? c.r) * 0.85 : c.r;
+      if ((x - c.x) ** 2 + (z - c.z) ** 2 < r * r) return true;
+    }
+    return false;
   }
 
   /** Push a circle out of colliders and keep it inside the fence. */
@@ -378,7 +412,7 @@ export class World {
       if (!isClear(x, z, r + 0.6)) continue;
       t.position.set(x, this.height(x, z) - 0.1, z);
       this.statics.add(t);
-      this.colliders.push({ x, z, r, blocksSight: true });
+      this.colliders.push({ x, z, r, blocksSight: true, sightR: t.userData.sightR as number });
     }
     const bushColor = def.treeStyle === 'palm' ? 0x2f8f3a : def.snow ? 0x4f7a5a : 0x4a8f3a;
     for (let i = 0; i < def.bushes; i++) {
@@ -410,18 +444,38 @@ export class World {
     for (const p of truckSpots) {
       const d = buildDecorations('truck', rng);
       d.position.set(p.x, this.height(p.x, p.z), p.z);
+      // Parked roughly facing into the woods.
+      d.rotation.y = Math.atan2(-p.x, -p.z) + (rng() - 0.5) * 0.8;
       this.statics.add(d);
-      this.colliders.push({ x: p.x, z: p.z, r: 2.4, blocksSight: true });
+      this.colliders.push({ x: p.x, z: p.z, r: 2.6, blocksSight: true });
       this.trucks.push(p.clone().setY(this.height(p.x, p.z)));
     }
-    for (let i = 0; i < 3; i++) {
-      const p = this.randomPoint(10);
+    const addStand = (p: THREE.Vector3, yaw: number, flyer: boolean) => {
       const d = buildDecorations('stand', rng);
-      const r = d.userData.radius as number;
-      if (!isClear(p.x, p.z, r)) continue;
       d.position.set(p.x, this.height(p.x, p.z), p.z);
+      d.rotation.y = yaw;
       this.statics.add(d);
-      this.colliders.push({ x: p.x, z: p.z, r, blocksSight: false });
+      this.colliders.push({ x: p.x, z: p.z, r: d.userData.radius as number, blocksSight: false });
+      const ladder = new THREE.Vector3(p.x + Math.sin(yaw) * 2.3, 0, p.z + Math.cos(yaw) * 2.3);
+      ladder.y = this.height(ladder.x, ladder.z);
+      this.stands.push({ pos: p.clone().setY(this.height(p.x, p.z)), yaw, ladder, flyer });
+    };
+    // One stand next to the first truck: that's where hunters pin their flyers.
+    if (this.trucks.length) {
+      const t = this.trucks[0];
+      const inward = new THREE.Vector3(-t.x, 0, -t.z).normalize();
+      for (let k = 0; k < 8; k++) {
+        const side = new THREE.Vector3(-inward.z, 0, inward.x).multiplyScalar(k % 2 ? 6 : -6);
+        const p = t.clone().addScaledVector(inward, 5 + k).add(side);
+        if (!isClear(p.x, p.z, 2.6)) continue;
+        addStand(p, Math.atan2(inward.x, inward.z), true);
+        break;
+      }
+    }
+    for (let i = 0; i < 4; i++) {
+      const p = this.randomPoint(12);
+      if (!isClear(p.x, p.z, 2.8)) continue;
+      addStand(p, rng() * Math.PI * 2, false);
     }
   }
 

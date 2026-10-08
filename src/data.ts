@@ -535,7 +535,7 @@ export const MAPS: MapDef[] = [
       found: 'A golden pear? Pears don\'t grow here. Somebody put this here...',
       steps: [
         { kind: 'trail', item: 'pear', count: 8, label: 'Follow the golden pears' },
-        { kind: 'trail', item: 'flyer', count: 1, label: 'Read the flyer on the tree stand' },
+        { kind: 'trail', item: 'flyer', count: 1, label: 'Read the flyer on the tree stand by the trucks' },
       ],
       title: 'The Flyer',
       page:
@@ -719,6 +719,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'airspace', name: 'Airspace Violation', desc: 'Bring down a drone by booping its pilot.' },
   { id: 'snared', name: 'Snared', desc: 'Step in a trap. It happens to everyone.' },
   { id: 'scaredy', name: 'Boo!', desc: 'Make a hunter run crying back to their truck.' },
+  { id: 'timber', name: 'Timber!', desc: 'Boop a tree stand with a hunter in it.' },
+  { id: 'orange', name: 'Blaze of Glory', desc: 'Wear a hunter\'s orange.' },
   { id: 'field_guide', name: 'Field Guide', desc: 'Log a hat from every kind of regular hunter.' },
   { id: 'secret_forest', name: 'Pear Pressure', desc: 'Uncover the secret of Whispering Pines.', secret: true },
   { id: 'secret_arctic', name: 'Radio Silence', desc: 'Uncover the secret of Frostbite Forest.', secret: true },

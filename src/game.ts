@@ -8,7 +8,9 @@ import { sfx } from './audio';
 import { Hud, type ObjectiveView, type Ping } from './hud';
 import { Hunter, PERSONALITY_LABEL, rollIdentity, trophyScore } from './hunters';
 import { Input } from './input';
-import { buildAnimal, buildFood, buildHatPickup, buildSecretItem, buildTrap, mat, textSprite, type Rig } from './models';
+import {
+  buildAnimal, buildDisguise, buildFood, buildHatPickup, buildLunch, buildSecretItem, buildTrap, buildVestPickup, mat, STAND_HEIGHT, textSprite, type Rig,
+} from './models';
 import { haptic } from './native';
 import type { HatEntry } from './save';
 import { World } from './world';
@@ -19,6 +21,8 @@ export type GameEvent =
   | { type: 'trap' }
   | { type: 'drone' }
   | { type: 'scared' }
+  | { type: 'timber' }
+  | { type: 'orange' }
   | { type: 'roar'; count: number }
   | { type: 'stink'; count: number }
   | { type: 'secretFound'; map: MapId }
@@ -48,6 +52,8 @@ export interface GameOptions {
 
 const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 const UP = new THREE.Vector3(0, 1, 0);
+/** Seconds a hunter's orange disguise lasts. */
+const ORANGE_TIME = 22;
 
 interface Fx {
   obj: THREE.Object3D;
@@ -76,6 +82,26 @@ interface Player {
   stamina: number;
   winded: boolean;
   snareT: number;
+  /** Holding a hunter's orange (max one), and seconds left wearing it. */
+  orangeHeld: boolean;
+  orangeT: number;
+  disguise: THREE.Group | null;
+}
+
+interface Pickup {
+  obj: THREE.Group;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  age: number;
+  kind: 'lunch' | 'orange';
+}
+
+interface Stand {
+  pos: THREE.Vector3;
+  yaw: number;
+  ladder: THREE.Vector3;
+  hunter: Hunter | null;
+  lunch: THREE.Group | null;
 }
 
 interface HatPickup {
@@ -122,6 +148,8 @@ export class Game {
   arrows: { mesh: THREE.Object3D; pos: THREE.Vector3; vel: THREE.Vector3; life: number; owner: Hunter; stuck: boolean }[] = [];
   clouds: { pos: THREE.Vector3; r: number; life: number; obj: THREE.Group; hits: number }[] = [];
   hatsOnGround: HatPickup[] = [];
+  pickups: Pickup[] = [];
+  stands: Stand[] = [];
   traps: Trap[] = [];
   fx: Fx[] = [];
   secret: SecretState | null = null;
@@ -179,11 +207,15 @@ export class Game {
       stamina: 1,
       winded: false,
       snareT: 0,
+      orangeHeld: false,
+      orangeT: 0,
+      disguise: null,
     };
     this.camDist = animal.id === 'bear' || animal.id === 'moose' ? 10 : animal.id === 'deer' ? 8 : 6.5;
 
     this.hud = new Hud(hudParent, animal, input.isTouch, {
       ability: () => input.tap('KeyE'),
+      orange: () => input.tap('KeyR'),
       boop: () => input.tap('KeyF'),
       jump: () => input.tap('Space'),
       pause: () => this.opts.onPause(),
@@ -229,6 +261,147 @@ export class Game {
         if (h.idn.look.golden) goldenLeft--;
         if (h.stationary) h.yaw = h.baseYaw = Math.atan2(start.x - p.x, start.z - p.z) + (Math.random() - 0.5);
         if (kind === 'king') h.target = this.kingPatrolPoint();
+      }
+    }
+    this.assignStands();
+  }
+
+  /** Some hunters head up into tree stands. Half of them packed a lunch, which sits on the platform. */
+  private assignStands() {
+    const eligible: HunterKind[] = ['rifle', 'bow', 'shotgun', 'drunk'];
+    for (const ws of this.world.stands) {
+      const st: Stand = { pos: ws.pos, yaw: ws.yaw, ladder: ws.ladder, hunter: null, lunch: null };
+      this.stands.push(st);
+      if (ws.flyer || Math.random() > 0.7) continue;
+      let best: Hunter | null = null;
+      let bd = Infinity;
+      for (const h of this.hunters) {
+        if (!eligible.includes(h.kind) || h.standIdx >= 0) continue;
+        const d = h.pos.distanceTo(ws.pos);
+        if (d < bd) {
+          bd = d;
+          best = h;
+        }
+      }
+      if (!best) continue;
+      st.hunter = best;
+      best.standIdx = this.stands.length - 1;
+      if (Math.random() < 0.6) this.perch(best, st);
+      else best.standPhase = 'walk';
+      if (Math.random() < 0.5) {
+        const lunch = buildLunch();
+        const off = new THREE.Vector3(0.55, STAND_HEIGHT + 0.08, -0.45).applyAxisAngle(UP, st.yaw);
+        lunch.position.copy(st.pos).add(off);
+        lunch.rotation.y = st.yaw;
+        this.world.scene.add(lunch);
+        st.lunch = lunch;
+      }
+    }
+  }
+
+  private perch(h: Hunter, st: Stand) {
+    h.standPhase = 'up';
+    h.elev = STAND_HEIGHT + 0.08;
+    h.pos.set(st.pos.x, st.pos.y, st.pos.z);
+    h.yaw = h.baseYaw = st.yaw;
+    h.sleepT = 12 + Math.random() * 14;
+  }
+
+  /** Climbing the ladder, or falling off the stand. Handles the hunter's pose itself. */
+  private updateStandMove(h: Hunter, dt: number) {
+    const st = this.stands[h.standIdx];
+    if (h.standPhase === 'climb') {
+      h.elev += dt * 1.4;
+      const t = Math.min(1, h.elev / STAND_HEIGHT);
+      h.pos.x = st.ladder.x + (st.pos.x - st.ladder.x) * t * t;
+      h.pos.z = st.ladder.z + (st.pos.z - st.ladder.z) * t * t;
+      h.yaw = st.yaw + Math.PI;
+      h.phase += dt * 6;
+      h.rig.legs.forEach((l, i) => (l.rotation.x = Math.sin(h.phase + i * Math.PI) * 0.7));
+      if (h.elev >= STAND_HEIGHT + 0.08) {
+        this.perch(h, st);
+        h.say(pick(['Ahh. Home sweet home.', 'Nobody ever looks up.', 'Best seat in the woods.']));
+      }
+    } else {
+      // Falling: tumble outward and land flat.
+      h.fallV -= 16 * dt;
+      h.elev += h.fallV * dt;
+      const out = new THREE.Vector3(Math.sin(st.yaw + Math.PI), 0, Math.cos(st.yaw + Math.PI));
+      h.pos.addScaledVector(out, dt * 1.8);
+      h.rig.body.rotation.x = Math.min(Math.PI / 2, h.rig.body.rotation.x + dt * 5);
+      h.rig.body.rotation.z = Math.sin(this.time * 25) * 0.2;
+      h.rig.legs.forEach((l, i) => (l.rotation.x = Math.sin(this.time * 30 + i) * 1.1));
+      if (h.elev <= 0) {
+        h.elev = 0;
+        h.standPhase = 'none';
+        h.rig.body.rotation.x = 0;
+        this.world.resolve(h.pos, 0.5);
+        this.shake = 0.5;
+        sfx.hit();
+        haptic('heavy');
+        this.burst(h.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), 0x8d6e63, 12);
+        h.state = h.fallFrom;
+        this.knockDown(h, 6, 'boop');
+        this.opts.onEvent({ type: 'timber' });
+      }
+    }
+    h.laser.visible = false;
+    h.setMarker('');
+    h.pos.y = this.world.height(h.pos.x, h.pos.z) + h.elev;
+    h.rig.root.position.copy(h.pos);
+    h.rig.root.rotation.y = h.yaw;
+  }
+
+  /** Boop the stand's legs: the hunter up top comes down the fast way. */
+  private knockStand(st: Stand) {
+    const h = st.hunter;
+    if (!h || h.standPhase !== 'up') return;
+    h.fallFrom = h.state === 'sleep' ? 'sleep' : 'patrol';
+    h.state = 'patrol';
+    h.standPhase = 'fall';
+    h.fallV = 3;
+    h.aim = 0;
+    h.say(pick(['WHOA WHOA WHOA', 'TIMBERRR!', 'Not the stand! NOT THE STAND!']), 1.6);
+    sfx.boop();
+    haptic('light');
+    this.shake = 0.25;
+    if (st.lunch) {
+      const world = st.lunch.position.clone();
+      const obj = st.lunch;
+      st.lunch = null;
+      const away = new THREE.Vector3(Math.sin(st.yaw + Math.PI), 0, Math.cos(st.yaw + Math.PI)).multiplyScalar(2);
+      this.pickups.push({ obj, pos: world, vel: new THREE.Vector3(away.x, 3, away.z), age: 0, kind: 'lunch' });
+      this.hud.toast('Their lunch is falling too!', 'good');
+    }
+  }
+
+  private dropOrange(at: THREE.Vector3) {
+    const obj = buildVestPickup();
+    const pos = at.clone().add(new THREE.Vector3(0, 1.2, 0));
+    obj.position.copy(pos);
+    this.world.scene.add(obj);
+    const away = new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize().multiplyScalar(2);
+    this.pickups.push({ obj, pos, vel: new THREE.Vector3(away.x, 6, away.z), age: 0, kind: 'orange' });
+    this.hud.toast('They dropped their blaze orange! Grab it.', 'good');
+  }
+
+  private wearOrange() {
+    const p = this.player;
+    if (!p.orangeHeld || p.orangeT > 0) return;
+    p.orangeHeld = false;
+    p.orangeT = ORANGE_TIME;
+    p.disguise = buildDisguise(p.rig);
+    p.rig.body.add(p.disguise);
+    sfx.rescue();
+    haptic('success');
+    this.hud.toast('You put on the orange. Legally, you are now a hunter.', 'good');
+    this.opts.onEvent({ type: 'orange' });
+    for (const h of this.hunters) {
+      if (h.state === 'alert' || h.state === 'search' || h.state === 'curious') {
+        h.state = 'patrol';
+        h.suspicion = 0;
+        h.aim = 0;
+        if (h.pos.distanceTo(p.pos) < 40) h.say(pick(['Huh. Must\'ve been another hunter.', 'Oh! Sorry, buddy. Thought you were a deer.', 'Nice vest.']));
       }
     }
   }
@@ -336,6 +509,15 @@ export class Game {
   }
 
   private spawnTrailItem(item: SecretItem, from: THREE.Vector3) {
+    const fs = this.world.stands.find((st) => st.flyer);
+    if (item === 'flyer' && fs) {
+      // Stapled to the tree stand by the trucks.
+      const local = new THREE.Vector3(1.3, 0, 0.2).applyAxisAngle(UP, fs.yaw);
+      const p = fs.pos.clone().add(local);
+      const prop = this.addProp(item, p, false);
+      prop.obj.rotation.set(0, fs.yaw + Math.PI / 2, 0);
+      return;
+    }
     // The next item appears a short walk away, so the trail leads you across the map.
     for (let tries = 0; tries < 40; tries++) {
       const a = Math.random() * Math.PI * 2;
@@ -375,8 +557,9 @@ export class Game {
     const p = this.player;
     for (const prop of s.props) {
       if (prop.done) continue;
-      prop.obj.rotation.y += dt * (prop.sabotage ? 0 : 1.5);
-      if (!prop.sabotage) prop.obj.position.y = prop.pos.y + 0.4 + Math.sin(this.time * 3) * 0.15;
+      const pinned = prop.item === 'flyer' && s.step >= 0;
+      if (!pinned) prop.obj.rotation.y += dt * (prop.sabotage ? 0 : 1.5);
+      if (!prop.sabotage && !pinned) prop.obj.position.y = prop.pos.y + 0.4 + Math.sin(this.time * 3) * 0.15;
       if (prop.item === 'decoy') {
         prop.obj.position.y = prop.pos.y + Math.sin(this.time * 2 + prop.pos.x) * 0.08;
         const led = prop.obj.getObjectByName('led');
@@ -550,12 +733,15 @@ export class Game {
   }
 
   /** What the BOOP button would hit right now. */
-  private boopTarget(): { hunter?: Hunter; prop?: SecretProp } | null {
+  private boopTarget(): { hunter?: Hunter; prop?: SecretProp; stand?: Stand } | null {
     const p = this.player;
+    for (const st of this.stands) {
+      if (st.hunter?.standPhase === 'up' && Math.hypot(st.pos.x - p.pos.x, st.pos.z - p.pos.z) < 2.4 + p.radius) return { stand: st };
+    }
     let best: Hunter | null = null;
     let bestD = 2.8 + p.radius;
     for (const h of this.hunters) {
-      if (h.state === 'hidden') continue;
+      if (h.state === 'hidden' || h.elev > 0.5) continue;
       const d = Math.hypot(h.pos.x - p.pos.x, h.pos.z - p.pos.z) / Math.max(1, h.rig.root.scale.x * 0.8);
       if (d < bestD) {
         best = h;
@@ -579,6 +765,10 @@ export class Game {
       this.sabotage(t.prop);
       return;
     }
+    if (t.stand) {
+      this.knockStand(t.stand);
+      return;
+    }
     const h = t.hunter!;
     if (this.canBoop(h)) {
       sfx.boop();
@@ -597,6 +787,8 @@ export class Game {
     if (h.state === 'stunned' || h.state === 'hidden' || h.state === 'flee') return false;
     if (h.state === 'stinky' || h.state === 'sleep') return true;
     if (h.kind === 'king' && h.vulnerableT > 0) return true;
+    // Nobody suspects a fellow hunter.
+    if (this.player.orangeT > 0 && h.kind !== 'king') return true;
     const toP = this.player.pos.clone().sub(h.pos).setY(0).normalize();
     const behind = toP.dot(h.forward) < -0.1;
     return behind && h.state !== 'alert';
@@ -636,8 +828,18 @@ export class Game {
   /** Returns true if the hunter actually went down. */
   private knockDown(h: Hunter, dur: number, cause: 'boop' | 'roar' | 'charge' | 'trap'): boolean {
     if (h.state === 'hidden' || h.state === 'stunned' || h.state === 'flee') return false;
+    if (h.standPhase === 'up' && cause !== 'trap') {
+      this.knockStand(this.stands[h.standIdx]);
+      return true;
+    }
+    if (h.standPhase === 'climb' || h.standPhase === 'fall') return false;
+    if (h.standPhase === 'walk') h.standPhase = 'none';
     const asleep = h.state === 'sleep';
     if (h.kind === 'king') return this.hitKing(h, cause);
+    const p = this.player;
+    if ((cause === 'boop' || cause === 'charge') && !p.orangeHeld && p.orangeT <= 0 && !this.pickups.some((x) => x.kind === 'orange') && Math.random() < 0.3) {
+      this.dropOrange(h.pos);
+    }
     h.state = 'stunned';
     h.stunT = dur;
     h.suspicion = 0;
@@ -750,12 +952,22 @@ export class Game {
     const w = this.world;
 
     if (inp.consume('KeyE', 'KeyQ')) this.useAbility();
+    if (inp.consume('KeyR')) this.wearOrange();
     if (inp.consume('KeyF')) this.tryBoop();
 
     p.abilityCd = Math.max(0, p.abilityCd - dt);
     p.abilityT = Math.max(0, p.abilityT - dt);
     p.invuln = Math.max(0, p.invuln - dt);
     p.snareT = Math.max(0, p.snareT - dt);
+    if (p.orangeT > 0) {
+      p.orangeT -= dt;
+      if (p.orangeT <= 0) {
+        p.orangeT = 0;
+        if (p.disguise) p.rig.body.remove(p.disguise);
+        p.disguise = null;
+        this.hud.toast('The orange is off. You look like a deer again!', 'bad');
+      }
+    }
     if (p.flying && p.abilityT <= 0) p.flying = false;
     const charging = a.id === 'moose' && p.abilityT > 0;
 
@@ -881,6 +1093,42 @@ export class Game {
     }
     this.hatsOnGround = this.hatsOnGround.filter((h) => h.age >= 0);
 
+    // Lunches and oranges
+    for (const it of this.pickups) {
+      it.age += dt;
+      const gy = w.height(it.pos.x, it.pos.z) + 0.4;
+      if (it.pos.y > gy || it.vel.y > 0) {
+        it.vel.y -= 18 * dt;
+        it.pos.addScaledVector(it.vel, dt);
+        if (it.pos.y < gy) {
+          it.pos.y = gy;
+          it.vel.set(0, 0, 0);
+        }
+        it.obj.rotation.x += dt * 6;
+      } else {
+        it.obj.rotation.x = 0;
+        it.obj.rotation.y += dt * 2;
+        it.pos.y = gy + Math.sin(this.time * 3) * 0.1;
+      }
+      it.obj.position.copy(it.pos);
+      if (it.age < 0.5 || Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z) > 1.5 + p.radius || Math.abs(it.pos.y - p.pos.y) > 3) continue;
+      if (it.kind === 'lunch') {
+        if (p.hearts >= this.animal.hearts) continue;
+        p.hearts++;
+        sfx.chomp();
+        haptic('success');
+        this.hud.toast(pick(['Ham on rye. +1 heart', 'A slightly squished sandwich. +1 heart', 'Bologna! +1 heart']), 'good');
+      } else {
+        if (p.orangeHeld) continue;
+        p.orangeHeld = true;
+        sfx.rescue();
+        this.hud.toast(this.input.isTouch ? 'Got a hunter\'s orange! Tap ORANGE to blend in.' : 'Got a hunter\'s orange! Press R to blend in.', 'good');
+      }
+      this.world.scene.remove(it.obj);
+      it.age = -1;
+    }
+    this.pickups = this.pickups.filter((it) => it.age >= 0);
+
     // Traps
     for (const t of this.traps) {
       if (t.sprung > 0) {
@@ -960,12 +1208,19 @@ export class Game {
     const target = p.pos.clone().add(new THREE.Vector3(0, p.rig.height * 0.5, 0));
     const to = target.clone().sub(eye);
     const dist = Math.hypot(to.x, to.z);
+    if (p.orangeT > 0) return { seen: false, dist, rate: 0 };
+    const perched = h.standPhase === 'up';
+    // Right under the stand is a blind spot: nobody looks straight down.
+    if (perched && dist < 3.2) return { seen: false, dist, rate: 0 };
     const duckSeason = p.flying && (h.kind === 'shotgun' || h.kind === 'king');
     let vis = this.animal.visibility;
     if (!p.moving) vis *= 0.55;
     else if (p.sprinting) vis *= 1.2;
     else vis *= 0.8;
-    if (!p.flying && this.world.inBush(p.pos.x, p.pos.z) && dist > 3.5) vis *= 0.28;
+    if (!p.flying && this.world.inBush(p.pos.x, p.pos.z) && dist > 3.5) vis *= perched ? 0.5 : 0.28;
+    // Every bush between you and the hunter is partial cover (less so from up in a stand).
+    if (!p.flying && dist > 3.5 && !perched) vis *= Math.pow(0.4, Math.min(2, this.world.bushesBetween(eye.x, eye.z, p.pos.x, p.pos.z)));
+    if (perched) vis *= 1.35;
     if (p.flying) vis *= duckSeason ? 2.2 : 1.0;
     if (this.map.snow && this.animal.id !== 'rabbit') vis *= 1.1;
     if (this.map.night) vis *= 0.85;
@@ -1103,7 +1358,7 @@ export class Game {
       dog.freeT = 8;
       this.dogSay(h, '*whimper*');
     }
-    const smells = !this.demo && dog.freeT <= 0 && !h.oblivious && distToPlayer < 13 && !w.inWater(p.pos.x, p.pos.z) && !this.stinkNear(p.pos, 3) && !p.flying;
+    const smells = !this.demo && p.orangeT <= 0 && dog.freeT <= 0 && !h.oblivious && distToPlayer < 13 && !w.inWater(p.pos.x, p.pos.z) && !this.stinkNear(p.pos, 3) && !p.flying;
     if (dog.freeT > 0 || h.state === 'hidden') {
       // Off duty: sniff around wherever.
       if (dog.pos.distanceTo(h.target) < 2 || Math.random() < dt * 0.2) h.target = w.freePoint(8);
@@ -1172,7 +1427,7 @@ export class Game {
     d.obj.children.forEach((c) => {
       if (c.name === 'rotor') c.rotation.y += dt * 40;
     });
-    if (this.demo || d.alertCd > 0 || h.oblivious) return;
+    if (this.demo || d.alertCd > 0 || h.oblivious || this.player.orangeT > 0) return;
     const flat = Math.hypot(p.pos.x - d.pos.x, p.pos.z - d.pos.z);
     const hidden = w.inBush(p.pos.x, p.pos.z) && !p.sprinting;
     if (flat < 5.2 && !hidden) {
@@ -1214,6 +1469,11 @@ export class Game {
           h.say('OK. I\'m OK. I\'m back.');
         }
         h.laser.visible = false;
+        continue;
+      }
+
+      if (h.standPhase === 'climb' || h.standPhase === 'fall') {
+        this.updateStandMove(h, dt);
         continue;
       }
 
@@ -1286,7 +1546,7 @@ export class Game {
           h.state = woke ? 'curious' : 'patrol';
           h.suspicion = woke ? 0.5 : 0;
           h.lastSeen.copy(p.pos);
-          h.sleepT = 25 + Math.random() * 20;
+          h.sleepT = h.standPhase === 'up' ? 12 + Math.random() * 14 : 25 + Math.random() * 20;
           h.say(woke ? 'HUH?! *hic* Who\'s there?' : '*yawn* Where am I?');
         }
       }
@@ -1300,7 +1560,7 @@ export class Game {
         if (vis.seen) {
           h.suspicion += vis.rate * dt * (h.state === 'search' ? 1.8 : 1);
           h.lastSeen.copy(p.pos);
-        } else if (!this.demo && p.sprinting && p.onGround && vis.dist < h.def.hearing * this.animal.noise) {
+        } else if (!this.demo && p.orangeT <= 0 && p.sprinting && p.onGround && vis.dist < h.def.hearing * this.animal.noise) {
           h.suspicion += 0.45 * dt;
           h.lastSeen.copy(p.pos);
           if (h.state === 'patrol') h.state = 'curious';
@@ -1326,6 +1586,29 @@ export class Game {
 
         switch (h.state) {
           case 'patrol': {
+            if (h.standPhase === 'walk') {
+              if (this.moveTowards(h, this.stands[h.standIdx].ladder, h.speed, dt)) {
+                h.standPhase = 'climb';
+                h.elev = 0;
+              }
+              break;
+            }
+            if (h.standPhase === 'up' && !this.demo && kind !== 'drunk') {
+              // It's warm up there, and hunting is mostly waiting.
+              h.sleepT -= dt;
+              if (h.sleepT <= 0) {
+                h.state = 'sleep';
+                h.stunT = 12 + Math.random() * 8;
+                h.quipT = 0;
+              }
+            }
+            if (p.orangeT > 0 && vis.dist < 7) {
+              h.quipT -= dt * 2;
+              if (h.quipT <= 0) {
+                h.quipT = 8 + Math.random() * 6;
+                h.say(pick(['Mornin\'.', 'Seen any deer, pal?', 'Nice vest. Cabela\'s?', 'You look kinda... furry today, Bob.']));
+              }
+            }
             if (h.stationary) {
               h.yaw = h.baseYaw + Math.sin(this.time * 0.35 + h.phase) * 0.9;
             } else if (this.moveTowards(h, h.target, h.speed, dt)) {
@@ -1465,7 +1748,7 @@ export class Game {
       }
 
       // Pose
-      h.pos.y = this.world.height(h.pos.x, h.pos.z);
+      h.pos.y = this.world.height(h.pos.x, h.pos.z) + h.elev;
       h.rig.root.position.copy(h.pos);
       h.rig.root.rotation.y = h.yaw;
       if (h.idn.look.tipsy && h.state !== 'stunned' && h.state !== 'sleep') h.rig.body.rotation.z = Math.sin(this.time * 2.3 + h.phase) * 0.08;
@@ -1572,7 +1855,7 @@ export class Game {
         if (a.pos.distanceTo(center) < p.radius + 0.35) {
           this.damage(a.owner);
           a.life = 0;
-        } else if (a.pos.y < this.world.height(a.pos.x, a.pos.z)) {
+        } else if (a.pos.y < this.world.height(a.pos.x, a.pos.z) || (a.pos.distanceTo(a.owner.pos) > 2.5 && this.world.solidAt(a.pos.x, a.pos.y, a.pos.z))) {
           a.stuck = true;
           a.life = Math.min(a.life, 2);
         }
@@ -1705,7 +1988,8 @@ export class Game {
       this.hud.setAbility(p.abilityCd / this.animal.ability.cooldown, p.abilityT > 0);
       this.hud.setFlying(p.flying);
       const bt = this.boopTarget();
-      this.hud.setBoop(!!bt && (!!bt.prop || this.canBoop(bt.hunter!)));
+      this.hud.setBoop(!!bt && (!!bt.prop || !!bt.stand || this.canBoop(bt.hunter!)));
+      this.hud.setOrange(p.orangeHeld, p.orangeT / ORANGE_TIME);
     }
     this.updateFx(dt);
     this.updateCamera(dt);

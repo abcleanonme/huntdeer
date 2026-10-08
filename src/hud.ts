@@ -29,6 +29,9 @@ export class Hud {
   private abilityRing: HTMLDivElement;
   private boopBtn: HTMLButtonElement;
   private jumpBtn: HTMLButtonElement;
+  private orangeBtn: HTMLButtonElement;
+  private orangeFill: HTMLDivElement;
+  private lastOrange = '';
   private toasts: HTMLDivElement;
   private pings: HTMLDivElement;
   private pingEls: HTMLDivElement[] = [];
@@ -48,7 +51,7 @@ export class Hud {
     parent: HTMLElement,
     animal: AnimalDef,
     isTouch: boolean,
-    actions: { ability: () => void; boop: () => void; jump: () => void; pause: () => void },
+    actions: { ability: () => void; boop: () => void; jump: () => void; pause: () => void; orange: () => void },
   ) {
     const r = (this.root = document.createElement('div'));
     r.className = 'hud';
@@ -71,6 +74,7 @@ export class Hud {
       <div class="flash"></div>
       <div class="hint"></div>
       <div class="hud-br">
+        <button class="act-btn orange-btn"><div class="orange-fill"></div><span>ORANGE</span></button>
         <button class="act-btn boop-btn">BOOP</button>
         <button class="act-btn jump-btn">JUMP</button>
         <button class="act-btn ability-btn"><div class="ability-ring"></div><span>${animal.ability.name}</span></button>
@@ -89,6 +93,8 @@ export class Hud {
     this.abilityRing = q('.ability-ring');
     this.boopBtn = q('.boop-btn');
     this.jumpBtn = q('.jump-btn');
+    this.orangeBtn = q('.orange-btn');
+    this.orangeFill = q('.orange-fill');
     this.toasts = q('.toasts');
     this.pings = q('.pings');
     this.flash = q('.flash');
@@ -111,11 +117,12 @@ export class Hud {
     bind(this.abilityBtn, actions.ability);
     bind(this.boopBtn, actions.boop);
     bind(this.jumpBtn, actions.jump);
+    bind(this.orangeBtn, actions.orange);
     bind(q('.pause-btn'), actions.pause);
 
     if (!isTouch) {
       r.classList.add('desktop');
-      this.hint.textContent = 'WASD move · Shift sprint · Space jump · E ability · F boop · Mouse look · Esc pause';
+      this.hint.textContent = 'WASD move · Shift sprint · Space jump · E ability · F boop · R wear orange · Mouse look · Esc pause';
       setTimeout(() => this.hint.classList.add('fade'), 9000);
     } else {
       this.hint.textContent = 'Left side: move (push far to sprint) · Right side: look';
@@ -226,6 +233,18 @@ export class Hud {
 
   setBoop(ready: boolean) {
     this.boopBtn.classList.toggle('ready', ready);
+  }
+
+  /** Hunter's orange: hidden when you have none; full when held; drains while worn. */
+  setOrange(held: boolean, wornFrac: number) {
+    const key = `${held}/${wornFrac.toFixed(2)}`;
+    if (key === this.lastOrange) return;
+    this.lastOrange = key;
+    const show = held || wornFrac > 0;
+    this.orangeBtn.style.display = show ? 'block' : 'none';
+    this.orangeBtn.classList.toggle('ready', held && wornFrac <= 0);
+    this.orangeBtn.classList.toggle('active', wornFrac > 0);
+    this.orangeFill.style.height = `${(wornFrac > 0 ? wornFrac : 1) * 100}%`;
   }
 
   setFlying(f: boolean) {

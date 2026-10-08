@@ -54,6 +54,12 @@ export class Achiever {
       case 'drone':
         this.grant('airspace');
         break;
+      case 'timber':
+        this.grant('timber');
+        break;
+      case 'orange':
+        this.grant('orange');
+        break;
       case 'scared':
         this.grant('scaredy');
         break;
