@@ -1,9 +1,9 @@
 # Shipping Huntdeer to the App Store
 
-Everything in the repo is ready (Xcode project, icon, privacy manifest, listing text, screenshots). These steps need you, a Mac with Xcode 16+, and an Apple ID.
+Everything in the repo is ready (Xcode project, icon, privacy manifest, listing text, screenshots). These steps need your Apple Developer account and a Mac with Xcode 16+.
 
-## 1. Join the Apple Developer Program
-https://developer.apple.com/programs/enroll/ ($99/year). Enroll as an individual unless you want a company name on the store page (needs a D-U-N-S number). Approval can take a day or two.
+## 1. Check your agreements
+In App Store Connect > Business, make sure the latest Apple Developer Program License Agreement is accepted (uploads fail until it is). Only needed for a paid app: the Paid Apps agreement plus banking and tax info.
 
 ## 2. Register the app
 1. In App Store Connect (https://appstoreconnect.apple.com) > Apps > **+ New App**.
