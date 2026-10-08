@@ -129,6 +129,7 @@ function onEnd(r: GameResult) {
     save.stars[map.id] = Math.max(save.stars[map.id] ?? 0, got);
     save.bestTime[map.id] = Math.min(save.bestTime[map.id] ?? Infinity, r.time);
     if (r.kingDefeated) save.kingDefeated = true;
+    save.cleared[`${map.id}:${animal.id}`] ??= new Date().toISOString().slice(0, 10);
   } else {
     save.deaths++;
   }

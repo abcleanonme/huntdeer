@@ -70,13 +70,13 @@ Booped hunters drop their hat. Grab it and they go in the **Hunter Log** with we
 
 **Maps**
 - **Whispering Pines** (forest): eat apples, escape through the fence.
-- **Frostbite Forest** (arctic): find your 3 lost babies, lead them to the cave.
-- **Bungle Jungle**: steal hunter hats, eat mangoes.
-- **Soggy Bottom** (swamp, opening day of duck season): survive until sundown, steal hats.
+- **Frostbite Forest** (arctic): find your 3 lost babies, lead them to the glowing cave.
+- **Bungle Jungle**: steal back the toucan eggs, eat mangoes, slip out through the old temple gate.
+- **Soggy Bottom** (swamp, opening day of duck season): warn the duck nests, eat bugs, hide out in the beaver lodge.
 
 **Hidden campaign.** Every map hides something that doesn't belong. Find it and a secret objective starts; finish it to add a page to the Case File. The four chapters lead to a fifth, hidden map and a boss fight. Spoilers in `src/data.ts`.
 
-**Achievements**: 24, including a few secret ones.
+**Achievements**: 34, including one for escaping every woods with each critter and one for escaping each woods with every critter.
 
 ## Code layout
 

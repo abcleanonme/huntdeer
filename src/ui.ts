@@ -132,7 +132,7 @@ export class Ui {
     this.show(
       `<div class="select">
         <div class="sel-head"><button class="back-btn back" aria-label="Back"><i class="chev"></i>Back</button><h2>Pick your critter</h2><div class="stars-total"><i class="st on"></i> ${stars} / ${mainMaps.length * 3}</div></div>
-        <div class="star-help"><i class="st on"></i><span>Each map awards up to <b>3 stars</b>: escape, take no hits, and beat the par time. Stars unlock new critters and maps. You have <b>${stars}</b>${nextUnlock(stars)}.</span></div>
+        <div class="star-help"><i class="st on"></i><span>Each woods awards up to <b>3 stars</b>: escape, take no hits, and beat the par time. Stars unlock new critters and woods. You have <b>${stars}</b>${nextUnlock(stars)}.</span></div>
         <div class="row">${animalCards}</div>
         <div class="detail">
           <b>${a.name}</b> <i>${a.tagline}</i><br/>
@@ -143,7 +143,7 @@ export class Ui {
         <div class="row">${mapCards}</div>
         <div class="detail">
           <b>${m.name}</b> <i>${m.blurb}</i><br/>
-          <div class="objlist">${m.objectives.map((o) => (o.type === 'eat' ? `Eat ${o.count} ${m.food.name}` : o.type === 'survive' ? `Survive ${o.count}s` : o.type === 'boop' || o.type === 'rescue' ? `${o.label} (${o.count})` : o.label)).join(' &rarr; ')}</div>
+          <div class="objlist">${m.objectives.map((o) => (o.type === 'eat' ? `Eat ${o.count} ${m.food.name}` : o.type === 'survive' ? `Survive ${o.count}s` : o.type === 'boop' || o.type === 'rescue' || o.type === 'collect' ? `${o.label} (${o.count})` : o.label)).join(' &rarr; ')}</div>
           ${secretLine}
           <div class="chips">${hunters}</div>
         </div>

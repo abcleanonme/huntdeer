@@ -32,6 +32,8 @@ export interface SaveData {
   secretsFound: MapId[];
   secretsDone: MapId[];
   kingDefeated: boolean;
+  /** Every woods + critter pair that has been escaped, as "map:animal" keys. */
+  cleared: Record<string, string>;
 }
 
 const KEY = 'huntdeer-save-v1';
@@ -48,6 +50,7 @@ function blank(): SaveData {
     secretsFound: [],
     secretsDone: [],
     kingDefeated: false,
+    cleared: {},
   };
 }
 

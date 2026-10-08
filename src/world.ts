@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MapDef } from './data';
-import { buildBush, buildDecorations, buildLantern, buildLodge, buildRock, buildTree, mat } from './models';
+import { buildBush, buildDecorations, buildExitLandmark, buildLantern, buildLodge, buildRock, buildTree, mat } from './models';
 
 export function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -44,6 +44,9 @@ export class World {
   playerStart = new THREE.Vector3();
   exitPos = new THREE.Vector3();
   exitGroup = new THREE.Group();
+  /** Doorway material of the exit landmark: dark until the exit opens. */
+  exitGlow = new THREE.MeshBasicMaterial({ color: 0x15181d });
+  exitKind: 'gap' | 'cave' | 'temple' | 'beaver' | 'cage' = 'gap';
   /** Where the Trophy King's lodge door is (lodge map only). */
   lodgeDoor = new THREE.Vector3();
   sun: THREE.DirectionalLight;
@@ -96,12 +99,18 @@ export class World {
       this.lodgeDoor.set(0, 0, -this.half + 34);
       this.exitPos.set(0, 0, this.lodgeDoor.z + 8);
       this.clearings.push({ x: 0, z: this.lodgeDoor.z - 2, r: 30 });
+      this.exitKind = 'cage';
+    } else if (def.exit && def.exit !== 'gap') {
+      // A landmark deep in the woods, on the far side from the start.
+      this.exitKind = def.exit;
+      this.exitPos.set((rng() - 0.5) * def.size * 0.5, 0, -this.half + 24 + rng() * 12);
+      this.clearings.push({ x: this.exitPos.x, z: this.exitPos.z - 4, r: 11 });
     }
 
     if (def.water) {
       for (let i = 0; i < 7; i++) {
         const p = this.randomPoint(15);
-        if (p.distanceTo(this.playerStart) < 20) continue;
+        if (p.distanceTo(this.playerStart) < 20 || Math.hypot(p.x - this.exitPos.x, p.z - this.exitPos.z) < 18) continue;
         this.ponds.push({ x: p.x, z: p.z, r: 6 + rng() * 9 });
       }
     }
@@ -217,7 +226,7 @@ export class World {
       }
     }
     const lim = this.half - 1.5;
-    const nearExit = allowExit && this.def.id !== 'lodge' && Math.abs(pos.x - this.exitPos.x) < 4;
+    const nearExit = allowExit && this.exitKind === 'gap' && Math.abs(pos.x - this.exitPos.x) < 4;
     pos.x = Math.max(-lim, Math.min(lim, pos.x));
     pos.z = Math.min(lim, pos.z);
     if (!nearExit) pos.z = Math.max(-lim, pos.z);
@@ -301,13 +310,13 @@ export class World {
   }
 
   private buildFenceAndExit() {
-    const { def, half } = this;
+    const { half } = this;
     const gap = 8;
     const ex = this.exitPos.x;
     this.fenceLine(-half, half, half, half);
     this.fenceLine(half, -half, half, half);
     this.fenceLine(-half, -half, -half, half);
-    if (def.id === 'lodge') {
+    if (this.exitKind !== 'gap') {
       this.fenceLine(-half, -half, half, -half);
     } else {
       this.fenceLine(-half, -half, ex - gap / 2, -half);
@@ -316,7 +325,7 @@ export class World {
 
     // Exit marker: a glowing ring + beam (plus a cave in the arctic).
     const eg = this.exitGroup;
-    eg.position.set(ex, this.height(ex, this.exitPos.z), def.id === 'lodge' ? this.exitPos.z : -half);
+    eg.position.set(ex, this.height(ex, this.exitPos.z), this.exitKind === 'gap' ? -half : this.exitPos.z);
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(3, 0.25, 6, 20).rotateX(Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: 0xfff35c, transparent: true, opacity: 0.85 }),
@@ -329,21 +338,25 @@ export class World {
     );
     beam.position.y = 20;
     eg.add(beam);
-    if (def.snow) {
-      const cave = new THREE.Group();
-      for (let i = 0; i < 7; i++) {
-        const a = (i / 6) * Math.PI;
-        const r = new THREE.Mesh(new THREE.DodecahedronGeometry(1.8, 0), mat(0x9aa7b4));
-        r.position.set(Math.cos(a) * 4.5, Math.sin(a) * 4, -3);
-        cave.add(r);
+    const k = this.exitKind;
+    if (k === 'cave' || k === 'temple' || k === 'beaver') {
+      const lm = buildExitLandmark(k, this.exitGlow, this.rng);
+      const e = this.exitPos;
+      // The doorway sits just behind the exit point, so walking up to it counts.
+      lm.position.set(e.x, this.height(e.x, e.z - 1.5) - 0.1, e.z - 1.5);
+      this.statics.add(lm);
+      for (const c of lm.userData.colliders as { x: number; z: number; r: number }[]) {
+        this.colliders.push({ x: e.x + c.x, z: e.z - 1.5 + c.z, r: c.r, blocksSight: true });
       }
-      const dark = new THREE.Mesh(new THREE.CircleGeometry(3.6, 12, 0, Math.PI), mat(0x1a1f26));
-      dark.position.set(0, 0, -3.5);
-      cave.add(dark);
-      eg.add(cave);
     }
     eg.visible = false;
     this.scene.add(eg);
+  }
+
+  /** Light up the exit: show the beacon and make the doorway glow. */
+  openExit() {
+    this.exitGroup.visible = true;
+    this.exitGlow.color.set(0xffd27a);
   }
 
   private buildLodgeGrounds() {

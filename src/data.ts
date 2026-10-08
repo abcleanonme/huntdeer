@@ -447,12 +447,14 @@ export const NICKNAMES = [
   'Jerky', 'Pickup', 'Camo Shorts', 'Tiny', 'Boomer', 'The Accountant', 'Lucky', 'Sneezy',
 ];
 
-export type ObjectiveType = 'eat' | 'boop' | 'survive' | 'exit' | 'rescue' | 'boss';
+export type ObjectiveType = 'eat' | 'boop' | 'survive' | 'exit' | 'rescue' | 'boss' | 'collect';
 
 export interface ObjectiveDef {
   type: ObjectiveType;
   count: number;
   label: string;
+  /** For 'collect': what's lying around (stolen eggs to grab, duck nests to warn). */
+  item?: 'egg' | 'nest';
 }
 
 /** Things you can pick up or mess with as part of a map's secret. */
@@ -503,6 +505,8 @@ export interface MapDef {
   parTime: number;
   unlockStars: number;
   secret?: SecretDef;
+  /** How you leave: a gap in the fence (default), or a glowing landmark inside the map. */
+  exit?: 'gap' | 'cave' | 'temple' | 'beaver';
 }
 
 export const MAPS: MapDef[] = [
@@ -566,6 +570,7 @@ export const MAPS: MapDef[] = [
       { type: 'rescue', count: 3, label: 'Find your lost babies' },
       { type: 'exit', count: 1, label: 'Lead them to the cave' },
     ],
+    exit: 'cave',
     parTime: 190,
     unlockStars: 2,
     secret: {
@@ -586,7 +591,7 @@ export const MAPS: MapDef[] = [
   {
     id: 'jungle',
     name: 'Bungle Jungle',
-    blurb: 'Dense, sweaty, and somebody is shipping animals out of here in crates.',
+    blurb: 'Dense, sweaty, and somebody is shipping animals out of here in crates. Starting with the toucan eggs.',
     size: 160,
     ground: 0x3d8b37,
     groundAlt: 0x2d6e2a,
@@ -601,10 +606,12 @@ export const MAPS: MapDef[] = [
     food: { name: 'mangoes', color: 0xffa62b },
     hunters: { shotgun: 2, bow: 1, ghillie: 2, ebike: 1, drone: 1, trapper: 1 },
     objectives: [
-      { type: 'boop', count: 3, label: 'Sneak up and steal hunter hats' },
+      { type: 'collect', item: 'egg', count: 3, label: 'Steal back the toucan eggs' },
       { type: 'eat', count: 5, label: 'Eat mangoes' },
+      { type: 'exit', count: 1, label: 'Slip out through the old temple gate' },
     ],
-    parTime: 210,
+    exit: 'temple',
+    parTime: 240,
     unlockStars: 4,
     secret: {
       chapter: 3,
@@ -621,7 +628,7 @@ export const MAPS: MapDef[] = [
   {
     id: 'swamp',
     name: 'Soggy Bottom',
-    blurb: 'Opening day of duck season. Also, why are some of these ducks beeping?',
+    blurb: 'Opening day of duck season. Warn the nests, then lie low. Also, why are some of these ducks beeping?',
     size: 150,
     ground: 0x6b7f3a,
     groundAlt: 0x55692c,
@@ -637,10 +644,12 @@ export const MAPS: MapDef[] = [
     water: true,
     hunters: { shotgun: 3, rifle: 1, ghillie: 1, ebike: 1, drunk: 1, hound: 1, drone: 1 },
     objectives: [
-      { type: 'survive', count: 60, label: 'Survive until sundown' },
-      { type: 'boop', count: 2, label: 'Steal hunter hats' },
+      { type: 'collect', item: 'nest', count: 4, label: 'Warn the duck nests' },
+      { type: 'eat', count: 6, label: 'Eat bugs' },
+      { type: 'exit', count: 1, label: 'Hide out in the beaver lodge' },
     ],
-    parTime: 60,
+    exit: 'beaver',
+    parTime: 240,
     unlockStars: 6,
     secret: {
       chapter: 4,
@@ -722,6 +731,24 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'timber', name: 'Timber!', desc: 'Boop a tree stand with a hunter in it.' },
   { id: 'orange', name: 'Blaze of Glory', desc: 'Wear a hunter\'s orange.' },
   { id: 'field_guide', name: 'Field Guide', desc: 'Log a hat from every kind of regular hunter.' },
+  ...([
+    ['deer', 'Doug Got Around'],
+    ['rabbit', 'Bun Voyage'],
+    ['skunk', 'Stink Tour'],
+    ['bear', 'Bearly Made It'],
+    ['duck', 'Wing It'],
+    ['moose', 'Moose on the Loose'],
+  ] as const).map(([id, name]) => ({
+    id: `tour_${id}`,
+    name,
+    desc: `Escape all four woods as ${ANIMALS.find((a) => a.id === id)!.name}.`,
+    secret: id === 'moose',
+  })),
+  ...MAPS.filter((m) => !m.hidden).map((m) => ({
+    id: `woods_${m.id}`,
+    name: `Everybody Out: ${m.name}`,
+    desc: `Escape ${m.name} with each of the five starting critters.`,
+  })),
   { id: 'secret_forest', name: 'Pear Pressure', desc: 'Uncover the secret of Whispering Pines.', secret: true },
   { id: 'secret_arctic', name: 'Radio Silence', desc: 'Uncover the secret of Frostbite Forest.', secret: true },
   { id: 'secret_jungle', name: 'Jailbreak', desc: 'Uncover the secret of Bungle Jungle.', secret: true },

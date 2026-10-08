@@ -41,6 +41,11 @@ export interface Rig {
   hats?: THREE.Object3D[];
   /** Height of the top of the model, for floating labels. */
   height: number;
+  /** Animals only: main body block and head, so outfits can be fitted to them. */
+  torso?: THREE.Mesh;
+  head?: THREE.Object3D;
+  /** Head half-size, used to size hats. */
+  headR?: number;
 }
 
 function leg(len: number, thick: number, color: number, hoof: number) {
@@ -67,7 +72,8 @@ export function buildAnimal(id: AnimalId, color: number, accent: number, scale =
   let height = 2;
 
   if (id === 'duck') {
-    body.add(mesh(sphere(0.45, 1), 0x8a6b4a, 0, 0.65, 0));
+    const torso = mesh(sphere(0.45, 1), 0x8a6b4a, 0, 0.65, 0);
+    body.add(torso);
     const head = mesh(sphere(0.3, 1), color, 0, 1.15, 0.3);
     body.add(head);
     body.add(mesh(box(0.3, 0.08, 0.3), accent, 0, 1.1, 0.6));
@@ -87,7 +93,7 @@ export function buildAnimal(id: AnimalId, color: number, accent: number, scale =
     }
     body.add(mesh(cone(0.18, 0.3, 4), 0x5a4630, 0, 0.75, -0.5).rotateX(-1.2));
     root.scale.setScalar(scale);
-    return { root, body, legs, wings, height: 1.5 * scale };
+    return { root, body, legs, wings, height: 1.5 * scale, torso, head, headR: 0.3 };
   }
 
   // Generic quadruped with per-animal tweaks.
@@ -100,7 +106,8 @@ export function buildAnimal(id: AnimalId, color: number, accent: number, scale =
   };
   const d = dims[id];
   const bodyY = d.legLen + d.bh / 2;
-  body.add(mesh(box(d.bw, d.bh, d.bl), color, 0, bodyY, 0));
+  const torso = mesh(box(d.bw, d.bh, d.bl), color, 0, bodyY, 0);
+  body.add(torso);
   if (id === 'deer') body.add(mesh(box(d.bw * 0.8, 0.1, d.bl * 0.8), accent, 0, bodyY - d.bh / 2, 0));
   if (id === 'skunk') body.add(mesh(box(0.18, 0.05, d.bl), accent, 0, bodyY + d.bh / 2, 0));
 
@@ -197,7 +204,7 @@ export function buildAnimal(id: AnimalId, color: number, accent: number, scale =
   }
 
   root.scale.setScalar(scale);
-  return { root, body, legs, height: height * scale };
+  return { root, body, legs, height: height * scale, torso, head, headR: d.headR };
 }
 
 /** How an individual hunter looks. Rolled per hunter so no two are quite the same. */
@@ -514,13 +521,39 @@ export function buildSecretItem(item: SecretItem): THREE.Group {
       add(cyl(0.12, 0.12, 0.45, 8), glow(0x43a047), 0, 0.25, 0);
       add(cyl(0.05, 0.05, 0.06, 6), mat(0xcccccc), 0, 0.5, 0);
       break;
-    case 'charger':
-      add(box(1.4, 1.6, 0.8), mat(0x37474f), 0, 0.8, 0);
-      add(box(0.6, 0.6, 0.05), glow(0x22d3ee), 0, 1.1, 0.42);
-      add(box(0.2, 0.4, 0.05), mat(0xffeb3b), 0, 1.1, 0.45);
-      add(box(0.1, 0.1, 3), mat(0x111111), 0.4, 0.05, 1.8);
-      add(box(0.4, 0.3, 0.3), glow(0xff1744), 0.4, 0.2, 3.3);
+    case 'charger': {
+      // Charging station on a pallet, cabled to a rumbling generator with a gas can.
+      add(box(1.8, 0.15, 1.2), mat(0x8d6e63), 0, 0.08, 0);
+      add(box(1.4, 1.7, 0.7), mat(0x37474f), 0, 1.0, 0);
+      add(box(0.7, 0.6, 0.05), glow(0x22d3ee), 0, 1.3, 0.37);
+      add(box(1.0, 0.18, 0.06), mat(0xffeb3b), 0, 0.55, 0.37);
+      for (const x of [-0.45, 0, 0.45]) add(box(0.12, 0.12, 0.12), glow(0x76ff03), x, 1.75, 0.37);
+      add(box(1.6, 0.12, 0.9), mat(0x263238), 0, 1.91, 0);
+      // Cable along the ground to the generator.
+      add(box(0.08, 0.08, 2.6), mat(0x111111), 0.55, 0.06, -1.6);
+      add(box(1.4, 0.08, 0.08), mat(0x111111), 1.2, 0.06, -2.9);
+      const gen = new THREE.Group();
+      gen.position.set(2.2, 0, -2.9);
+      gen.name = 'generator';
+      g.add(gen);
+      const gAdd = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number) => {
+        const o = new THREE.Mesh(geo, m);
+        o.position.set(x, y, z);
+        o.castShadow = true;
+        gen.add(o);
+        return o;
+      };
+      gAdd(box(1.5, 0.9, 1.0), mat(0xd32f2f), 0, 0.65, 0);
+      gAdd(box(1.7, 0.08, 1.2), mat(0x212121), 0, 0.15, 0);
+      for (const x of [-0.75, 0.75]) gAdd(box(0.08, 1.1, 0.08), mat(0x212121), x, 0.6, 0.55);
+      gAdd(box(1.5, 0.08, 0.08), mat(0x212121), 0, 1.15, 0.55);
+      gAdd(cyl(0.12, 0.12, 0.5, 6), mat(0x757575), 0.45, 1.25, -0.25);
+      gAdd(box(0.5, 0.35, 0.05), mat(0x424242), -0.3, 0.7, 0.51);
+      gAdd(box(0.12, 0.12, 0.05), glow(0xffeb3b), 0.2, 0.75, 0.52);
+      gAdd(box(0.4, 0.5, 0.25), mat(0xc62828), -1.2, 0.25, 0.3);
+      gAdd(box(0.12, 0.1, 0.12), mat(0x212121), -1.2, 0.55, 0.3);
       break;
+    }
     case 'key':
       add(new THREE.TorusGeometry(0.18, 0.05, 4, 10), glow(0xffb74d), 0, 0.45, 0);
       add(box(0.06, 0.45, 0.06), glow(0xffb74d), 0, 0.1, 0);
@@ -856,29 +889,132 @@ export function buildVestPickup(): THREE.Group {
   return g;
 }
 
-/** Blaze-orange vest and cap that the player's critter wears while disguised. */
-export function buildDisguise(rig: Rig): THREE.Group {
-  const g = new THREE.Group();
-  // Measure the body in the rig's own space, not wherever it is standing in the world.
-  const saved = { p: rig.root.position.clone(), q: rig.root.quaternion.clone() };
-  rig.root.position.set(0, 0, 0);
-  rig.root.quaternion.identity();
-  rig.root.updateMatrixWorld(true);
-  const b = new THREE.Box3().setFromObject(rig.body);
-  rig.root.position.copy(saved.p);
-  rig.root.quaternion.copy(saved.q);
-  rig.root.updateMatrixWorld(true);
-  const size = b.getSize(new THREE.Vector3());
-  const c = b.getCenter(new THREE.Vector3());
-  const s = 1 / rig.root.scale.x;
-  const vest = mesh(box(size.x * 1.06 * s, size.y * 0.3 * s, size.z * 0.5 * s), 0xff6a00, c.x * s, (b.min.y + size.y * 0.55) * s, c.z * s);
-  g.add(vest);
-  g.add(mesh(box(size.x * 1.08 * s, 0.05 * s, size.z * 0.1 * s), 0xfff176, c.x * s, (b.min.y + size.y * 0.6) * s, c.z * s, false));
+/** Blaze-orange vest and cap, fitted to the critter's body and head. Returns the pieces already attached. */
+export function wearDisguise(rig: Rig): THREE.Object3D[] {
+  const torso = rig.torso;
+  const head = rig.head;
+  if (!torso || !head) return [];
+  torso.geometry.computeBoundingBox();
+  const tb = torso.geometry.boundingBox!.getSize(new THREE.Vector3());
+  // Vest: a snug shell around the front half of the body, with a reflective band.
+  const vest = new THREE.Group();
+  vest.position.copy(torso.position);
+  // A round body (the duck) gets a slimmer vest so it doesn't turn into a box.
+  const k = torso.geometry instanceof THREE.IcosahedronGeometry ? 0.86 : 1.08;
+  vest.add(mesh(box(tb.x * k, tb.y * k * 0.9, tb.z * 0.5), 0xff6a00, 0, 0.01, tb.z * 0.14));
+  vest.add(mesh(box(tb.x * (k + 0.02), tb.y * 0.14, tb.z * 0.51), 0xfff176, 0, tb.y * 0.12, tb.z * 0.14, false));
+  rig.body.add(vest);
+  // Cap: sits right on top of the head, brim forward. Antlers poke out either side.
+  const r = rig.headR ?? 0.3;
+  const top = r * 0.7;
   const cap = new THREE.Group();
-  cap.add(mesh(box(0.45, 0.2, 0.45), 0xff6a00, 0, 0, 0));
-  cap.add(mesh(box(0.45, 0.04, 0.25), 0xff6a00, 0, -0.08, 0.3));
-  cap.position.set(c.x * s, b.max.y * s + 0.05, (c.z + size.z * 0.35) * s);
-  g.add(cap);
+  cap.position.set(0, top + r * 0.16, r * 0.1);
+  cap.add(mesh(box(r * 1.25, r * 0.36, r * 1.25), 0xff6a00, 0, 0, 0));
+  cap.add(mesh(box(r * 1.25, r * 0.08, r * 0.6), 0xff6a00, 0, -r * 0.14, r * 0.85));
+  cap.add(mesh(box(r * 0.3, r * 0.12, r * 0.3), 0xff6a00, 0, r * 0.22, 0));
+  head.add(cap);
+  return [vest, cap];
+}
+
+/**
+ * Exit landmarks. Each faces +z with its doorway at the origin, uses `glow` for the doorway
+ * (dark until the exit opens) and lists its solid parts in userData.colliders.
+ */
+export function buildExitLandmark(kind: 'cave' | 'temple' | 'beaver', glow: THREE.Material, rng: () => number): THREE.Group {
+  const g = new THREE.Group();
+  const colliders: { x: number; z: number; r: number }[] = [];
+  if (kind === 'cave') {
+    // A rocky hill with an arched opening and icicles.
+    const rock = 0x8e9aa6;
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 8) * Math.PI;
+      const r = new THREE.Mesh(new THREE.DodecahedronGeometry(1.6 + rng() * 0.5, 0), mat(i % 2 ? rock : 0x7d8996));
+      r.position.set(Math.cos(a) * 3.4, Math.sin(a) * 3.3 + 0.4, -0.6);
+      r.castShadow = true;
+      g.add(r);
+    }
+    for (let i = 0; i < 7; i++) {
+      const r = new THREE.Mesh(new THREE.DodecahedronGeometry(3 + rng() * 1.5, 0), mat(i % 2 ? rock : 0x9aa7b4));
+      r.position.set((rng() - 0.5) * 9, 1.5 + rng() * 2.5, -4 - rng() * 4);
+      r.castShadow = true;
+      g.add(r);
+    }
+    const snowCap = mesh(sphere(3.6, 1), 0xffffff, 0, 5.2, -4.5);
+    snowCap.scale.set(1.6, 0.5, 1.2);
+    g.add(snowCap);
+    for (let i = 0; i < 6; i++) g.add(mesh(cone(0.18, 0.9, 4).rotateX(Math.PI), 0xe3f2fd, -2 + i * 0.8, 3.6 - (i % 2) * 0.3, 0.6, false));
+    const mouth = new THREE.Mesh(new THREE.CircleGeometry(3.1, 14, 0, Math.PI), glow);
+    mouth.position.set(0, 0.05, -0.9);
+    g.add(mouth);
+    colliders.push({ x: -4.2, z: -0.8, r: 1.8 }, { x: 4.2, z: -0.8, r: 1.8 }, { x: 0, z: -5.5, r: 5 });
+  } else if (kind === 'temple') {
+    // Overgrown stone gate: two pillars, a lintel with a carved face, steps, vines.
+    const stone = 0x9e9a8a;
+    const dark = 0x7c786a;
+    for (const sx of [-1, 1]) {
+      for (let i = 0; i < 4; i++) g.add(mesh(box(1.5, 1.2, 1.5), i % 2 ? stone : dark, 2.6 * sx, 0.6 + i * 1.2, -0.5));
+      g.add(mesh(box(1.8, 0.3, 1.8), dark, 2.6 * sx, 4.95, -0.5));
+      for (let i = 0; i < 3; i++) g.add(mesh(box(0.15, 1.6 + rng() * 1.2, 0.15), 0x3f8f3a, 2.6 * sx + (i - 1) * 0.45, 3.4, 0.28, false));
+    }
+    g.add(mesh(box(7.2, 1.2, 1.8), stone, 0, 5.7, -0.5));
+    g.add(mesh(box(1.4, 0.8, 0.2), dark, 0, 5.7, 0.45)); // carved face
+    g.add(mesh(box(0.3, 0.2, 0.1), 0x2e7d32, -0.35, 5.85, 0.58, false));
+    g.add(mesh(box(0.3, 0.2, 0.1), 0x2e7d32, 0.35, 5.85, 0.58, false));
+    for (let i = 0; i < 3; i++) g.add(mesh(box(5.2 - i * 0.6, 0.25, 1.1), dark, 0, 0.12 + i * 0.25, 1.2 - i * 0.55));
+    // The temple itself behind the gate: a stepped mound.
+    for (let i = 0; i < 4; i++) g.add(mesh(box(12 - i * 2.6, 2, 10 - i * 2.2), i % 2 ? stone : dark, 0, 1 + i * 2, -7));
+    for (let i = 0; i < 8; i++) g.add(mesh(box(0.2, 2 + rng() * 2, 0.2), 0x3f8f3a, (rng() - 0.5) * 10, 3 + rng() * 3, -2.1, false));
+    const door = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 5), glow);
+    door.position.set(0, 2.6, -1.95);
+    g.add(door);
+    colliders.push({ x: -2.6, z: -0.5, r: 1.1 }, { x: 2.6, z: -0.5, r: 1.1 }, { x: -4, z: -7, r: 5 }, { x: 4, z: -7, r: 5 });
+  } else {
+    // Beaver lodge: a dome of sticks in a little pond, with a dark doorway at the waterline.
+    g.add(mesh(cyl(6.5, 6.5, 0.1, 18), 0x4f7f8a, 0, 0.02, -3.5, false));
+    for (let i = 0; i < 70; i++) {
+      const a = rng() * Math.PI * 2;
+      const t = rng();
+      const r = 3.6 * (1 - t * 0.85);
+      const stick = mesh(cyl(0.09, 0.12, 2.2 + rng() * 1.6, 4), rng() < 0.5 ? 0x6d4c41 : 0x5d4037, Math.cos(a) * r, 0.2 + t * 3.0, -3.5 + Math.sin(a) * r);
+      stick.rotation.set((rng() - 0.5) * 2.4, rng() * 3, (rng() - 0.5) * 2.4);
+      g.add(stick);
+    }
+    const mound = mesh(sphere(3.4, 1), 0x5a4030, 0, 0.6, -3.5);
+    mound.scale.set(1, 0.75, 1);
+    g.add(mound);
+    const door = new THREE.Mesh(new THREE.CircleGeometry(1.3, 12, 0, Math.PI), glow);
+    door.position.set(0, 0.1, -0.15);
+    g.add(door);
+    colliders.push({ x: 0, z: -3.8, r: 3.2 });
+  }
+  g.userData.colliders = colliders;
+  return g;
+}
+
+/** A sneaky collectible for 'collect' objectives: a stolen toucan egg in a crate, or a duck nest. */
+export function buildObjectiveItem(item: 'egg' | 'nest'): THREE.Group {
+  const g = new THREE.Group();
+  if (item === 'egg') {
+    g.add(mesh(box(0.9, 0.35, 0.7), 0x8d6e63, 0, 0.18, 0));
+    g.add(mesh(box(0.9, 0.06, 0.06), 0x5d4037, 0, 0.36, 0.33, false));
+    const egg = mesh(sphere(0.28, 1), 0x81d4fa, 0, 0.62, 0);
+    egg.scale.set(0.85, 1.15, 0.85);
+    egg.name = 'egg';
+    g.add(egg);
+    for (let i = 0; i < 4; i++) g.add(mesh(sphere(0.05, 0), 0x0277bd, Math.cos(i * 1.7) * 0.2, 0.55 + (i % 2) * 0.18, Math.sin(i * 1.7) * 0.2, false));
+  } else {
+    // Reed nest with a sleepy duck in it.
+    g.add(mesh(cyl(0.75, 0.55, 0.35, 10), 0xbfa66b, 0, 0.18, 0));
+    for (let i = 0; i < 10; i++) {
+      const reed = mesh(box(0.05, 1.2 + (i % 3) * 0.3, 0.05), 0x7c8f3a, Math.cos(i) * 0.95, 0.6, Math.sin(i) * 0.95, false);
+      reed.rotation.z = Math.cos(i * 2) * 0.2;
+      g.add(reed);
+    }
+    const duck = buildAnimal('duck', 0x2e7d32, 0xf2c94c, 0.6);
+    duck.root.position.y = 0.15;
+    duck.root.name = 'duck';
+    g.add(duck.root);
+  }
   return g;
 }
 

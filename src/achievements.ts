@@ -1,5 +1,5 @@
 // Achievement rules. Fed by in-game events and end-of-run results; writes unlocks into the save.
-import { ACHIEVEMENTS, MAPS, REGULAR_KINDS, type AchievementDef, type AnimalId, type MapId } from './data';
+import { ACHIEVEMENTS, ANIMALS, MAPS, REGULAR_KINDS, type AchievementDef, type AnimalId, type MapId } from './data';
 import type { GameEvent, GameResult } from './game';
 import type { SaveData } from './save';
 
@@ -34,6 +34,10 @@ export class Achiever {
     if (MAPS.filter((m) => !m.hidden).every((m) => (s.stars[m.id] ?? 0) >= 3)) this.grant('all_stars');
     for (const m of s.secretsDone) this.grant(`secret_${m}`);
     if (s.kingDefeated) this.grant('king');
+    // Every woods with one critter, and one woods with every critter.
+    const woods = MAPS.filter((m) => !m.hidden);
+    for (const a of ANIMALS) if (woods.every((m) => s.cleared[`${m.id}:${a.id}`])) this.grant(`tour_${a.id}`);
+    for (const m of woods) if (ANIMALS.filter((a) => !a.unlockSecret).every((a) => s.cleared[`${m.id}:${a.id}`])) this.grant(`woods_${m.id}`);
   }
 
   onEvent(e: GameEvent) {

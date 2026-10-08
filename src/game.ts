@@ -9,7 +9,7 @@ import { Hud, type ObjectiveView, type Ping } from './hud';
 import { Hunter, PERSONALITY_LABEL, rollIdentity, trophyScore } from './hunters';
 import { Input } from './input';
 import {
-  buildAnimal, buildDisguise, buildFood, buildHatPickup, buildLunch, buildSecretItem, buildTrap, buildVestPickup, mat, STAND_HEIGHT, textSprite, type Rig,
+  buildAnimal, buildFood, buildHatPickup, buildObjectiveItem, buildLunch, buildSecretItem, buildTrap, buildVestPickup, mat, STAND_HEIGHT, textSprite, wearDisguise, type Rig,
 } from './models';
 import { haptic } from './native';
 import type { HatEntry } from './save';
@@ -51,6 +51,7 @@ export interface GameOptions {
 }
 
 const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
+const critterNoun = (id: AnimalDef['id']) => ({ deer: 'deer', rabbit: 'rabbit', skunk: 'skunk', bear: 'bear', duck: 'duck', moose: 'moose' })[id];
 const UP = new THREE.Vector3(0, 1, 0);
 /** Seconds a hunter's orange disguise lasts. */
 const ORANGE_TIME = 22;
@@ -85,7 +86,7 @@ interface Player {
   /** Holding a hunter's orange (max one), and seconds left wearing it. */
   orangeHeld: boolean;
   orangeT: number;
-  disguise: THREE.Group | null;
+  disguise: THREE.Object3D[];
 }
 
 interface Pickup {
@@ -149,11 +150,12 @@ export class Game {
   clouds: { pos: THREE.Vector3; r: number; life: number; obj: THREE.Group; hits: number }[] = [];
   hatsOnGround: HatPickup[] = [];
   pickups: Pickup[] = [];
+  collectibles: { obj: THREE.Group; pos: THREE.Vector3; item: 'egg' | 'nest'; done: boolean }[] = [];
   stands: Stand[] = [];
   traps: Trap[] = [];
   fx: Fx[] = [];
   secret: SecretState | null = null;
-  progress: Record<ObjectiveType, number> = { eat: 0, boop: 0, survive: 0, exit: 0, rescue: 0, boss: 0 };
+  progress: Record<ObjectiveType, number> = { eat: 0, boop: 0, survive: 0, exit: 0, rescue: 0, boss: 0, collect: 0 };
   runHats: HatEntry[] = [];
   time = 0;
   hitsTaken = 0;
@@ -209,7 +211,7 @@ export class Game {
       snareT: 0,
       orangeHeld: false,
       orangeT: 0,
-      disguise: null,
+      disguise: [],
     };
     this.camDist = animal.id === 'bear' || animal.id === 'moose' ? 10 : animal.id === 'deer' ? 8 : 6.5;
 
@@ -390,8 +392,7 @@ export class Game {
     if (!p.orangeHeld || p.orangeT > 0) return;
     p.orangeHeld = false;
     p.orangeT = ORANGE_TIME;
-    p.disguise = buildDisguise(p.rig);
-    p.rig.body.add(p.disguise);
+    p.disguise = wearDisguise(p.rig);
     sfx.rescue();
     haptic('success');
     this.hud.toast('You put on the orange. Legally, you are now a hunter.', 'good');
@@ -401,7 +402,7 @@ export class Game {
         h.state = 'patrol';
         h.suspicion = 0;
         h.aim = 0;
-        if (h.pos.distanceTo(p.pos) < 40) h.say(pick(['Huh. Must\'ve been another hunter.', 'Oh! Sorry, buddy. Thought you were a deer.', 'Nice vest.']));
+        if (h.pos.distanceTo(p.pos) < 40) h.say(pick(['Huh. Must\'ve been another hunter.', `Oh! Sorry, buddy. Thought you were a ${critterNoun(this.animal.id)}.`, 'Nice vest.']));
       }
     }
   }
@@ -425,6 +426,21 @@ export class Game {
           f.position.copy(p).add(new THREE.Vector3(0, 0.6, 0));
           this.world.scene.add(f);
           this.foods.push({ obj: f, pos: p, eaten: false });
+        }
+      }
+      if (o.type === 'collect' && o.item) {
+        // Spread out: each one at least 25 m from the others, away from the start and the exit.
+        for (let i = 0; i < o.count; i++) {
+          let p = this.world.freePoint(10, start, 35);
+          for (let k = 0; k < 20; k++) {
+            if (this.collectibles.every((c) => c.pos.distanceTo(p) > 25) && p.distanceTo(this.world.exitPos) > 15) break;
+            p = this.world.freePoint(10, start, 35);
+          }
+          const obj = buildObjectiveItem(o.item);
+          obj.position.copy(p);
+          obj.rotation.y = Math.random() * 6;
+          this.world.scene.add(obj);
+          this.collectibles.push({ obj, pos: p, item: o.item, done: false });
         }
       }
       if (o.type === 'rescue') {
@@ -654,8 +670,14 @@ export class Game {
     const othersDone = views.filter((_, i) => this.map.objectives[i].type !== 'exit').every((v) => v.done);
     if (hasExit && othersDone && !this.exitOpen) {
       this.exitOpen = true;
-      this.world.exitGroup.visible = true;
-      const msg = this.map.id === 'lodge' ? 'The King dropped the cage key! Free the Old Moose!' : this.map.snow ? 'Head to the cave! Follow the light!' : 'The fence gap is open! Follow the light!';
+      this.world.openExit();
+      const msg = {
+        cage: 'The King dropped the cage key! Free the Old Moose!',
+        cave: 'The cave is glowing. Head for the light!',
+        temple: 'The temple gate is open. Head for the light!',
+        beaver: 'The beavers left the light on. Head for the lodge!',
+        gap: 'The fence gap is open! Follow the light!',
+      }[this.world.exitKind];
       this.hud.toast(msg, 'good');
       sfx.rescue();
     }
@@ -778,7 +800,7 @@ export class Game {
       h.suspicion = 1;
       h.state = 'alert';
       h.lastSeen.copy(this.player.pos);
-      h.say(h.kind === 'king' ? 'Ha! Not while I\'m looking, deer!' : 'HEY! I see you!');
+      h.say(h.kind === 'king' ? `Ha! Not while I'm looking, ${critterNoun(this.animal.id)}!` : 'HEY! I see you!');
       sfx.alert();
     }
   }
@@ -963,9 +985,9 @@ export class Game {
       p.orangeT -= dt;
       if (p.orangeT <= 0) {
         p.orangeT = 0;
-        if (p.disguise) p.rig.body.remove(p.disguise);
-        p.disguise = null;
-        this.hud.toast('The orange is off. You look like a deer again!', 'bad');
+        for (const o of p.disguise) o.removeFromParent();
+        p.disguise = [];
+        this.hud.toast(`The orange is off. You look like a ${critterNoun(this.animal.id)} again!`, 'bad');
       }
     }
     if (p.flying && p.abilityT <= 0) p.flying = false;
@@ -1038,7 +1060,7 @@ export class Game {
     // Animation
     const r = p.rig;
     r.root.position.copy(p.pos);
-    r.root.rotation.y = p.yaw;
+    r.root.rotation.set(0, p.yaw, 0);
     p.phase += dt * (p.moving ? speed * 1.6 : p.snareT > 0 ? 30 : 0);
     const swing = (p.moving && p.onGround) || p.snareT > 0 ? Math.sin(p.phase) * 0.7 : 0;
     r.legs.forEach((l, i) => (l.rotation.x = (i === 0 || i === 3 ? swing : -swing) * (a.id === 'duck' ? 0.8 : 1)));
@@ -1060,6 +1082,36 @@ export class Game {
         sfx.chomp();
         const need = this.map.objectives.find((o) => o.type === 'eat')?.count ?? 0;
         if (this.progress.eat <= need) this.hud.toast(`Nom! (${this.progress.eat}/${need})`, 'good');
+      }
+    }
+
+    // Eggs to grab / nests to warn
+    for (const c of this.collectibles) {
+      if (c.done) continue;
+      const egg = c.obj.getObjectByName('egg');
+      if (egg) egg.position.y = 0.62 + Math.abs(Math.sin(this.time * 2 + c.pos.x)) * 0.12;
+      if (Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z) > 1.8 + p.radius) continue;
+      c.done = true;
+      this.progress.collect++;
+      const need = this.map.objectives.find((o) => o.type === 'collect')?.count ?? 0;
+      if (c.item === 'egg') {
+        egg?.removeFromParent();
+        sfx.rescue();
+        this.hud.toast(`Got an egg back! (${this.progress.collect}/${need})`, 'good');
+      } else {
+        // The duck wakes up and flaps off to warn everyone else.
+        const duck = c.obj.getObjectByName('duck');
+        if (duck) {
+          const world = new THREE.Vector3();
+          duck.getWorldPosition(world);
+          duck.removeFromParent();
+          duck.position.copy(world);
+          const dir = new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
+          duck.rotation.y = Math.atan2(dir.x, dir.z);
+          this.addFx(duck, 4, (fx, d) => fx.obj.position.addScaledVector(fx.vel!, d), dir.multiplyScalar(7).setY(3.5));
+        }
+        sfx.quack();
+        this.hud.toast(`QUACK! Nest warned. (${this.progress.collect}/${need})`, 'good');
       }
     }
 
@@ -1189,7 +1241,6 @@ export class Game {
 
     // Exit
     if (this.exitOpen) {
-      this.world.exitGroup.rotation.y += dt;
       const e = this.world.exitPos;
       if (Math.hypot(p.pos.x - e.x, p.pos.z - e.z) < (this.map.id === 'lodge' ? 5 : 4.5)) {
         this.progress.exit = 1;
@@ -1576,7 +1627,7 @@ export class Game {
           h.aim = -0.7;
           sfx.alert();
           if (h.spotQuipCd <= 0) {
-            h.say(kind === 'drone' ? 'Deer at my chair! DEER AT MY CHAIR!' : pick(SPOT_QUIPS), 1.6);
+            h.say(kind === 'drone' ? `${critterNoun(this.animal.id)} at my chair! ${critterNoun(this.animal.id).toUpperCase()} AT MY CHAIR!`.replace(/^./, (c) => c.toUpperCase()) : pick(SPOT_QUIPS), 1.6);
             h.spotQuipCd = 6;
           }
           if (kind === 'drone') this.alertOthers(h.pos, 60, p.pos, h, ['Copy that, Dan!', 'Coming, Dan!']);
