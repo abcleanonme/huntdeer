@@ -1,7 +1,8 @@
 // Builds a map's scene: terrain, trees, bushes, rocks, the fence with its exit gap, and spawn points.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MapDef } from './data';
-import { buildBush, buildDecorations, buildFence, buildRock, buildTree, mat } from './models';
+import { buildBush, buildDecorations, buildLantern, buildLodge, buildRock, buildTree, mat } from './models';
 
 export function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -33,14 +34,20 @@ export class World {
   colliders: Collider[] = [];
   bushes: { x: number; z: number; r: number }[] = [];
   ponds: Pond[] = [];
+  trucks: THREE.Vector3[] = [];
   half: number;
   rng: () => number;
   playerStart = new THREE.Vector3();
   exitPos = new THREE.Vector3();
   exitGroup = new THREE.Group();
+  /** Where the Trophy King's lodge door is (lodge map only). */
+  lodgeDoor = new THREE.Vector3();
   sun: THREE.DirectionalLight;
   hemi: THREE.HemisphereLight;
   private hills: { x: number; z: number; r: number; h: number }[] = [];
+  private clearings: { x: number; z: number; r: number }[] = [];
+  /** Static scenery, merged into a handful of meshes once the map is built. */
+  private statics = new THREE.Group();
 
   constructor(public def: MapDef, seed = 1234) {
     this.rng = mulberry32(seed + def.id.length * 977);
@@ -50,9 +57,9 @@ export class World {
     this.scene.background = new THREE.Color(def.sky);
     this.scene.fog = new THREE.FogExp2(def.fog, def.fogDensity);
 
-    this.hemi = new THREE.HemisphereLight(0xffffff, def.groundAlt, 1.6);
+    this.hemi = new THREE.HemisphereLight(def.night ? 0x8fa8ff : 0xffffff, def.groundAlt, def.night ? 0.7 : 1.6);
     this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight(0xfff2d6, 1.8);
+    this.sun = new THREE.DirectionalLight(def.night ? 0xb3c6ff : 0xfff2d6, def.night ? 0.9 : 1.8);
     this.sun.position.set(30, 50, 20);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
@@ -79,6 +86,14 @@ export class World {
     this.playerStart.set(0, 0, this.half - 12);
     this.exitPos.set((rng() - 0.5) * def.size * 0.5, 0, -this.half + 2);
 
+    if (def.id === 'lodge') {
+      // The lodge sits on a flattened clearing; the exit is the Old Moose's cage by the front door.
+      this.hills = [];
+      this.lodgeDoor.set(0, 0, -this.half + 34);
+      this.exitPos.set(0, 0, this.lodgeDoor.z + 8);
+      this.clearings.push({ x: 0, z: this.lodgeDoor.z - 2, r: 30 });
+    }
+
     if (def.water) {
       for (let i = 0; i < 7; i++) {
         const p = this.randomPoint(15);
@@ -89,7 +104,10 @@ export class World {
 
     this.buildGround();
     this.buildFenceAndExit();
+    if (def.id === 'lodge') this.buildLodgeGrounds();
     this.scatter();
+    this.scene.add(this.statics);
+    this.mergeStatics();
   }
 
   height(x: number, z: number): number {
@@ -165,7 +183,7 @@ export class World {
       }
     }
     const lim = this.half - 1.5;
-    const nearExit = allowExit && Math.abs(pos.x - this.exitPos.x) < 4;
+    const nearExit = allowExit && this.def.id !== 'lodge' && Math.abs(pos.x - this.exitPos.x) < 4;
     pos.x = Math.max(-lim, Math.min(lim, pos.x));
     pos.z = Math.min(lim, pos.z);
     if (!nearExit) pos.z = Math.max(-lim, pos.z);
@@ -207,13 +225,43 @@ export class World {
       water.position.set(p.x, this.height(p.x, p.z) + 0.85, p.z);
       water.receiveShadow = true;
       this.scene.add(water);
-      // Lily pads and cattails
       for (let i = 0; i < 6; i++) {
         const a = this.rng() * Math.PI * 2;
         const r = this.rng() * p.r * 0.7;
         const pad = new THREE.Mesh(new THREE.CircleGeometry(0.6, 6).rotateX(-Math.PI / 2), mat(0x4caf50));
         pad.position.set(p.x + Math.cos(a) * r, water.position.y + 0.02, p.z + Math.sin(a) * r);
-        this.scene.add(pad);
+        this.statics.add(pad);
+      }
+    }
+  }
+
+  /** A fence from a to b whose posts sit on the terrain and whose rails follow it between posts. */
+  private fenceLine(ax: number, az: number, bx: number, bz: number) {
+    const len = Math.hypot(bx - ax, bz - az);
+    if (len < 0.5) return;
+    const n = Math.max(1, Math.round(len / 4));
+    const post = new THREE.BoxGeometry(0.25, 1.6, 0.25);
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const x = ax + (bx - ax) * t;
+      const z = az + (bz - az) * t;
+      pts.push(new THREE.Vector3(x, this.height(x, z), z));
+    }
+    for (const p of pts) {
+      const m = new THREE.Mesh(post, mat(0x7a5a3a));
+      m.position.set(p.x, p.y + 0.7, p.z);
+      this.statics.add(m);
+    }
+    for (let i = 0; i < n; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const seg = a.distanceTo(b);
+      for (const y of [0.55, 1.15]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.15, seg + 0.1), mat(0x8a6a4a));
+        rail.position.set((a.x + b.x) / 2, (a.y + b.y) / 2 + y, (a.z + b.z) / 2);
+        rail.lookAt(b.x, b.y + y, b.z);
+        this.statics.add(rail);
       }
     }
   }
@@ -222,29 +270,19 @@ export class World {
     const { def, half } = this;
     const gap = 8;
     const ex = this.exitPos.x;
-    const sides: [number, number, number, number][] = [
-      [0, half, def.size, 0],
-      [half, 0, def.size, Math.PI / 2],
-      [-half, 0, def.size, Math.PI / 2],
-    ];
-    for (const [x, z, len, rot] of sides) {
-      const f = buildFence(len);
-      f.position.set(x, this.height(x, z), z);
-      f.rotation.y = rot;
-      this.scene.add(f);
+    this.fenceLine(-half, half, half, half);
+    this.fenceLine(half, -half, half, half);
+    this.fenceLine(-half, -half, -half, half);
+    if (def.id === 'lodge') {
+      this.fenceLine(-half, -half, half, -half);
+    } else {
+      this.fenceLine(-half, -half, ex - gap / 2, -half);
+      this.fenceLine(ex + gap / 2, -half, half, -half);
     }
-    // North side, split around the exit gap.
-    const leftLen = ex - gap / 2 + half;
-    const rightLen = half - (ex + gap / 2);
-    const lf = buildFence(leftLen);
-    lf.position.set(-half + leftLen / 2, this.height(-half + leftLen / 2, -half), -half);
-    const rf = buildFence(rightLen);
-    rf.position.set(half - rightLen / 2, this.height(half - rightLen / 2, -half), -half);
-    this.scene.add(lf, rf);
 
-    // Exit marker: a glowing ring + sign (or a cave in the arctic).
+    // Exit marker: a glowing ring + beam (plus a cave in the arctic).
     const eg = this.exitGroup;
-    eg.position.set(ex, this.height(ex, -half), -half);
+    eg.position.set(ex, this.height(ex, this.exitPos.z), def.id === 'lodge' ? this.exitPos.z : -half);
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(3, 0.25, 6, 20).rotateX(Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: 0xfff35c, transparent: true, opacity: 0.85 }),
@@ -274,6 +312,42 @@ export class World {
     this.scene.add(eg);
   }
 
+  private buildLodgeGrounds() {
+    const door = this.lodgeDoor;
+    const lodge = buildLodge();
+    const fp = lodge.userData.footprint as { w: number; d: number };
+    lodge.position.set(0, this.height(0, door.z - fp.d / 2), door.z - fp.d / 2);
+    this.statics.add(lodge);
+    // Approximate the cabin walls with a row of circles for collisions and sight.
+    for (let x = -fp.w / 2; x <= fp.w / 2; x += 2.5) {
+      for (const z of [door.z - fp.d, door.z]) this.colliders.push({ x, z, r: 1.4, blocksSight: true });
+    }
+    for (let z = door.z - fp.d; z <= door.z; z += 2.5) {
+      for (const x of [-fp.w / 2, fp.w / 2]) this.colliders.push({ x, z, r: 1.4, blocksSight: true });
+    }
+    for (let x = -fp.w / 2 + 2; x < fp.w / 2; x += 3) {
+      for (let z = door.z - fp.d + 2; z < door.z; z += 3) this.colliders.push({ x, z, r: 1.6, blocksSight: true });
+    }
+    // Lanterns along the drive and two warm lights by the door.
+    for (let z = door.z + 6; z < this.half - 10; z += 14) {
+      for (const x of [-7, 7]) {
+        const l = buildLantern();
+        l.position.set(x, this.height(x, z), z);
+        this.statics.add(l);
+        this.colliders.push({ x, z, r: 0.4, blocksSight: false });
+      }
+    }
+    for (const x of [-9, 9]) {
+      const light = new THREE.PointLight(0xffb74d, 30, 30, 1.6);
+      light.position.set(x, 5, door.z + 3);
+      this.scene.add(light);
+    }
+    // Moonlight on the courtyard.
+    const moon = new THREE.Mesh(new THREE.SphereGeometry(6, 16, 8), new THREE.MeshBasicMaterial({ color: 0xfff8e1, fog: false }));
+    moon.position.set(-60, 70, -150);
+    this.scene.add(moon);
+  }
+
   private scatter() {
     const { def, rng } = this;
     const start = this.playerStart;
@@ -281,6 +355,7 @@ export class World {
       Math.hypot(x - start.x, z - start.z) > 7 &&
       Math.hypot(x - this.exitPos.x, z - this.exitPos.z) > 7 &&
       !this.inWater(x, z) &&
+      !this.clearings.some((c) => Math.hypot(x - c.x, z - c.z) < c.r) &&
       !this.colliders.some((c) => Math.hypot(x - c.x, z - c.z) < c.r + r + 0.5);
 
     // Trees cluster a bit for a nicer look and better hiding spots.
@@ -302,16 +377,19 @@ export class World {
       const r = t.userData.radius as number;
       if (!isClear(x, z, r + 0.6)) continue;
       t.position.set(x, this.height(x, z) - 0.1, z);
-      this.scene.add(t);
+      this.statics.add(t);
       this.colliders.push({ x, z, r, blocksSight: true });
     }
     const bushColor = def.treeStyle === 'palm' ? 0x2f8f3a : def.snow ? 0x4f7a5a : 0x4a8f3a;
     for (let i = 0; i < def.bushes; i++) {
       const p = this.randomPoint(5);
-      if (!isClear(p.x, p.z, 1)) continue;
+      // Bushes are allowed in the lodge courtyard: you need somewhere to hide from the King.
+      const inClearing = this.clearings.some((c) => Math.hypot(p.x - c.x, p.z - c.z) < c.r);
+      if (!inClearing && !isClear(p.x, p.z, 1)) continue;
+      if (inClearing && this.colliders.some((c) => Math.hypot(p.x - c.x, p.z - c.z) < c.r + 2)) continue;
       const b = buildBush(bushColor, rng, def.snow);
       b.position.set(p.x, this.height(p.x, p.z) - 0.2, p.z);
-      this.scene.add(b);
+      this.statics.add(b);
       this.bushes.push({ x: p.x, z: p.z, r: 1.7 });
     }
     for (let i = 0; i < def.rocks; i++) {
@@ -320,18 +398,73 @@ export class World {
       const r = rock.userData.radius as number;
       if (!isClear(p.x, p.z, r)) continue;
       rock.position.set(p.x, this.height(p.x, p.z), p.z);
-      this.scene.add(rock);
+      this.statics.add(rock);
       this.colliders.push({ x: p.x, z: p.z, r, blocksSight: r > 1.2 });
     }
-    // Hunting decor: tree stands, trucks, a sign at the start.
-    for (const kind of ['stand', 'stand', 'stand', 'truck', 'truck'] as const) {
+    // Hunting decor: tree stands and trucks. Trucks are where scared hunters run home to.
+    const truckSpots = [
+      new THREE.Vector3(-this.half + 9, 0, (rng() - 0.5) * this.half),
+      new THREE.Vector3(this.half - 9, 0, (rng() - 0.5) * this.half),
+      new THREE.Vector3((rng() - 0.5) * this.half, 0, -this.half + 9),
+    ];
+    for (const p of truckSpots) {
+      const d = buildDecorations('truck', rng);
+      d.position.set(p.x, this.height(p.x, p.z), p.z);
+      this.statics.add(d);
+      this.colliders.push({ x: p.x, z: p.z, r: 2.4, blocksSight: true });
+      this.trucks.push(p.clone().setY(this.height(p.x, p.z)));
+    }
+    for (let i = 0; i < 3; i++) {
       const p = this.randomPoint(10);
-      const d = buildDecorations(kind, rng);
+      const d = buildDecorations('stand', rng);
       const r = d.userData.radius as number;
       if (!isClear(p.x, p.z, r)) continue;
       d.position.set(p.x, this.height(p.x, p.z), p.z);
-      this.scene.add(d);
-      this.colliders.push({ x: p.x, z: p.z, r, blocksSight: kind === 'truck' });
+      this.statics.add(d);
+      this.colliders.push({ x: p.x, z: p.z, r, blocksSight: false });
     }
+  }
+
+  /**
+   * Merge all static scenery into one mesh per material. A map has thousands of little meshes;
+   * this brings it down to a few dozen draw calls, which matters a lot on phones.
+   */
+  private mergeStatics() {
+    this.statics.updateMatrixWorld(true);
+    const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
+    const keep: THREE.Object3D[] = [];
+    this.statics.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      const m = o.material as THREE.Material;
+      if (m.transparent || m instanceof THREE.MeshBasicMaterial) {
+        keep.push(o);
+        return;
+      }
+      let g = (o.geometry as THREE.BufferGeometry).clone();
+      if (g.index) g = g.toNonIndexed();
+      for (const name of Object.keys(g.attributes)) if (!['position', 'normal'].includes(name)) g.deleteAttribute(name);
+      g.applyMatrix4(o.matrixWorld);
+      const list = buckets.get(m) ?? [];
+      list.push(g);
+      buckets.set(m, list);
+    });
+    // Unlit pieces (lit windows, lanterns) keep their own meshes, reparented with world transforms.
+    for (const o of keep) {
+      o.updateMatrixWorld(true);
+      const clone = o.clone();
+      o.matrixWorld.decompose(clone.position, clone.quaternion, clone.scale);
+      this.scene.add(clone);
+    }
+    this.scene.remove(this.statics);
+    for (const [m, geos] of buckets) {
+      const merged = mergeGeometries(geos, false);
+      if (!merged) continue;
+      const mesh = new THREE.Mesh(merged, m);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+      geos.forEach((g) => g.dispose());
+    }
+    this.statics = new THREE.Group();
   }
 }

@@ -1,28 +1,53 @@
-// One round of play: the player animal, the hunters, objectives, abilities and the camera.
+// One round of play: the player animal, the hunters, objectives, secrets, abilities and the camera.
 import * as THREE from 'three';
 import {
-  BOOP_QUIPS, HIT_QUIPS, HUNTERS, LOST_QUIPS, MISS_QUIPS, SPOT_QUIPS, STINK_QUIPS,
-  type AnimalDef, type HunterDef, type HunterKind, type MapDef, type ObjectiveType,
+  BOOP_QUIPS, HIT_QUIPS, HUNTERS, LOST_QUIPS, MISS_QUIPS, SCARED_QUIPS, SLEEP_QUIPS, SPOT_QUIPS, STINK_QUIPS,
+  type AnimalDef, type HunterKind, type MapDef, type MapId, type ObjectiveType, type SecretDef, type SecretItem,
 } from './data';
 import { sfx } from './audio';
 import { Hud, type ObjectiveView, type Ping } from './hud';
+import { Hunter, PERSONALITY_LABEL, rollIdentity, trophyScore } from './hunters';
 import { Input } from './input';
-import { buildAnimal, buildFood, buildHatPickup, buildHunter, mat, textSprite, type Rig } from './models';
+import { buildAnimal, buildFood, buildHatPickup, buildSecretItem, buildTrap, mat, textSprite, type Rig } from './models';
+import { haptic } from './native';
+import type { HatEntry } from './save';
 import { World } from './world';
+
+export type GameEvent =
+  | { type: 'boop'; kind: HunterKind; asleep: boolean }
+  | { type: 'hat'; entry: HatEntry }
+  | { type: 'trap' }
+  | { type: 'drone' }
+  | { type: 'scared' }
+  | { type: 'roar'; count: number }
+  | { type: 'stink'; count: number }
+  | { type: 'secretFound'; map: MapId }
+  | { type: 'secretDone'; map: MapId };
 
 export interface GameResult {
   win: boolean;
   time: number;
   hitsTaken: number;
   stars: boolean[];
-  killer?: HunterDef;
-  booped: number;
+  killer?: string;
+  killerKind?: HunterKind;
+  hats: HatEntry[];
+  secretDone: boolean;
+  kingDefeated: boolean;
+}
+
+export interface GameOptions {
+  onEnd: (r: GameResult) => void;
+  onPause: () => void;
+  onEvent: (e: GameEvent) => void;
+  /** Menu-backdrop mode: no input, nobody notices the player, nothing ends. */
+  demo?: boolean;
+  /** Spawn this map's secret (false once it has been solved). */
+  secret?: boolean;
 }
 
 const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 const UP = new THREE.Vector3(0, 1, 0);
-
-type HState = 'patrol' | 'curious' | 'alert' | 'search' | 'stunned' | 'stinky';
 
 interface Fx {
   obj: THREE.Object3D;
@@ -30,102 +55,6 @@ interface Fx {
   max: number;
   update?: (fx: Fx, dt: number) => void;
   vel?: THREE.Vector3;
-}
-
-class Hunter {
-  rig: Rig;
-  pos: THREE.Vector3;
-  yaw = Math.random() * Math.PI * 2;
-  baseYaw = this.yaw;
-  state: HState = 'patrol';
-  suspicion = 0;
-  target: THREE.Vector3;
-  lastSeen = new THREE.Vector3();
-  aim = 0;
-  reload = 0;
-  lostT = 0;
-  stunT = 0;
-  stinkT = 0;
-  searchT = 0;
-  hatOn = true;
-  quipT = 4 + Math.random() * 10;
-  bubble: THREE.Sprite | null = null;
-  bubbleT = 0;
-  marker: THREE.Sprite | null = null;
-  markerKind = '';
-  phase = Math.random() * 10;
-  stuckT = 0;
-  lastPos = new THREE.Vector3();
-  laser: THREE.Line;
-  cone: THREE.Mesh;
-  sniffTag: THREE.Sprite;
-  canSee = false;
-  spotQuipCd = 0;
-  /** Seconds during which this hunter ignores the player (e.g. e-bike recharging after a ram). */
-  ignoreT = 0;
-
-  constructor(public def: HunterDef, pos: THREE.Vector3, scene: THREE.Scene) {
-    this.rig = buildHunter(def.kind, def.vest);
-    this.pos = pos.clone();
-    this.target = pos.clone();
-    this.rig.root.position.copy(pos);
-    scene.add(this.rig.root);
-
-    const lg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, 1)]);
-    this.laser = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0 }));
-    this.laser.frustumCulled = false;
-    scene.add(this.laser);
-
-    const coneGeo = new THREE.CircleGeometry(def.viewRange, 18, -Math.PI / 2 - def.fov, def.fov * 2).rotateX(-Math.PI / 2);
-    this.cone = new THREE.Mesh(
-      coneGeo,
-      new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }),
-    );
-    this.cone.position.y = 0.4;
-    this.cone.visible = false;
-    this.rig.root.add(this.cone);
-
-    this.sniffTag = textSprite(`👃 ${def.name}`, { bg: 'rgba(255,60,60,0.9)', fg: '#fff', size: 0.035 });
-    // Screen-space size so the tag is readable at any distance.
-    this.sniffTag.material.sizeAttenuation = false;
-    this.sniffTag.position.y = this.rig.height + 1.6;
-    this.sniffTag.visible = false;
-    this.rig.root.add(this.sniffTag);
-  }
-
-  get forward() {
-    return new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
-  }
-
-  eye() {
-    return this.pos.clone().add(new THREE.Vector3(0, this.def.kind === 'ghillie' ? 1.2 : 1.9, 0));
-  }
-
-  say(text: string, dur = 2.6) {
-    if (this.bubble) {
-      this.rig.root.remove(this.bubble);
-      (this.bubble.material as THREE.SpriteMaterial).map?.dispose();
-    }
-    this.bubble = textSprite(text, { size: 0.75 });
-    this.bubble.position.y = this.rig.height + 0.9;
-    this.rig.root.add(this.bubble);
-    this.bubbleT = dur;
-  }
-
-  setMarker(kind: '' | '?' | '!') {
-    if (kind === this.markerKind) return;
-    this.markerKind = kind;
-    if (this.marker) {
-      this.rig.root.remove(this.marker);
-      (this.marker.material as THREE.SpriteMaterial).map?.dispose();
-      this.marker = null;
-    }
-    if (kind) {
-      this.marker = textSprite(kind, { bg: 'none', fg: kind === '!' ? '#ff2a2a' : '#ffd23f', size: 1.6 });
-      this.marker.position.y = this.rig.height + 0.1;
-      this.rig.root.add(this.marker);
-    }
-  }
 }
 
 interface Player {
@@ -146,6 +75,40 @@ interface Player {
   phase: number;
   stamina: number;
   winded: boolean;
+  snareT: number;
+}
+
+interface HatPickup {
+  obj: THREE.Group;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  age: number;
+  entry: HatEntry | null;
+}
+
+interface Trap {
+  obj: THREE.Group;
+  pos: THREE.Vector3;
+  owner: Hunter;
+  sprung: number;
+  tag: THREE.Sprite;
+}
+
+interface SecretProp {
+  obj: THREE.Group;
+  pos: THREE.Vector3;
+  item: SecretItem;
+  sabotage: boolean;
+  done: boolean;
+}
+
+interface SecretState {
+  def: SecretDef;
+  found: boolean;
+  step: number;
+  progress: number;
+  props: SecretProp[];
+  done: boolean;
 }
 
 export class Game {
@@ -157,9 +120,13 @@ export class Game {
   foods: { obj: THREE.Object3D; pos: THREE.Vector3; eaten: boolean }[] = [];
   babies: { rig: Rig; pos: THREE.Vector3; following: boolean; yaw: number; phase: number }[] = [];
   arrows: { mesh: THREE.Object3D; pos: THREE.Vector3; vel: THREE.Vector3; life: number; owner: Hunter; stuck: boolean }[] = [];
-  clouds: { pos: THREE.Vector3; r: number; life: number; obj: THREE.Group }[] = [];
+  clouds: { pos: THREE.Vector3; r: number; life: number; obj: THREE.Group; hits: number }[] = [];
+  hatsOnGround: HatPickup[] = [];
+  traps: Trap[] = [];
   fx: Fx[] = [];
-  progress: Record<ObjectiveType, number> = { eat: 0, boop: 0, survive: 0, exit: 0, rescue: 0 };
+  secret: SecretState | null = null;
+  progress: Record<ObjectiveType, number> = { eat: 0, boop: 0, survive: 0, exit: 0, rescue: 0, boss: 0 };
+  runHats: HatEntry[] = [];
   time = 0;
   hitsTaken = 0;
   camYaw = 0;
@@ -169,8 +136,11 @@ export class Game {
   paused = false;
   ended = false;
   exitOpen = false;
+  kingDefeated = false;
   private skyBase: THREE.Color;
   private camTarget = new THREE.Vector3();
+  private demo: boolean;
+  private mooseCage: THREE.Group | null = null;
 
   constructor(
     private renderer: THREE.WebGLRenderer,
@@ -178,11 +148,9 @@ export class Game {
     public map: MapDef,
     public animal: AnimalDef,
     hudParent: HTMLElement,
-    private onEnd: (r: GameResult) => void,
-    private onPause: () => void,
-    /** Menu-backdrop mode: no input, nobody notices the player, nothing ends. */
-    private demo = false,
+    private opts: GameOptions,
   ) {
+    this.demo = !!opts.demo;
     this.world = new World(map, 1000 + Math.floor(Math.random() * 100000));
     const scene = this.world.scene;
     this.skyBase = new THREE.Color(map.sky);
@@ -206,39 +174,72 @@ export class Game {
       speed: 0,
       moving: false,
       sprinting: false,
-      radius: animal.id === 'bear' ? 1.0 : animal.id === 'deer' ? 0.7 : 0.45,
+      radius: animal.id === 'bear' || animal.id === 'moose' ? 1.0 : animal.id === 'deer' ? 0.7 : 0.45,
       phase: 0,
       stamina: 1,
       winded: false,
+      snareT: 0,
     };
-    this.camDist = animal.id === 'bear' ? 10 : animal.id === 'deer' ? 8 : 6.5;
+    this.camDist = animal.id === 'bear' || animal.id === 'moose' ? 10 : animal.id === 'deer' ? 8 : 6.5;
 
     this.hud = new Hud(hudParent, animal, input.isTouch, {
       ability: () => input.tap('KeyE'),
       boop: () => input.tap('KeyF'),
       jump: () => input.tap('Space'),
-      pause: () => this.onPause(),
+      pause: () => this.opts.onPause(),
     });
 
     this.spawnHunters();
     this.spawnObjectives();
+    if (!this.demo && opts.secret && map.secret) this.spawnSecretTrigger(map.secret);
     this.onResize();
-    this.hud.toast(`${map.name}: ${map.objectives.map((o) => o.label).join(', then ')}`, 'info');
+    if (!this.demo) {
+      this.hud.toast(`${map.name}: ${map.objectives.map((o) => (o.type === 'eat' ? `eat ${this.map.food.name}` : o.label.toLowerCase())).join(', then ')}`, 'info');
+      if (this.hunters.some((h) => h.idn.look.golden)) this.hud.toast('Rumor has it a Golden Vest hunter is out here today.', 'secret');
+    }
+  }
+
+  // --- Spawning ---------------------------------------------------------
+
+  private spawnHunter(kind: HunterKind, pos: THREE.Vector3, allowGolden: boolean) {
+    const h = new Hunter(rollIdentity(kind, allowGolden), pos, this.world.scene);
+    h.target = this.world.freePoint(8);
+    if (!h.stationary && kind !== 'king') this.world.resolve(h.pos, 0.5);
+    this.hunters.push(h);
+    return h;
   }
 
   private spawnHunters() {
     const start = this.world.playerStart;
+    let goldenLeft = this.demo ? 0 : 1;
     for (const [kind, count] of Object.entries(this.map.hunters) as [HunterKind, number][]) {
       for (let i = 0; i < count; i++) {
-        const p = this.world.freePoint(10, start, 45);
-        const h = new Hunter(HUNTERS[kind], p, this.world.scene);
-        h.target = this.world.freePoint(8);
-        if (kind === 'ghillie') h.yaw = h.baseYaw = Math.atan2(start.x - p.x, start.z - p.z) + (Math.random() - 0.5);
-        this.hunters.push(h);
-        // Ghillie Gus doesn't move, so he doesn't need to be pushed out of anything.
-        if (kind !== 'ghillie') this.world.resolve(h.pos, 0.5);
+        let p: THREE.Vector3;
+        if (kind === 'king') {
+          p = this.world.lodgeDoor.clone().add(new THREE.Vector3(0, 0, 4));
+        } else if (kind === 'drone') {
+          // Drone pilots set up their lawn chair next to a truck.
+          const t = pick(this.world.trucks);
+          p = t.clone().add(new THREE.Vector3(t.x > 0 ? -4 : 4, 0, 3));
+        } else {
+          p = this.world.freePoint(10, start, 45);
+        }
+        p.y = this.world.height(p.x, p.z);
+        const h = this.spawnHunter(kind, p, goldenLeft > 0);
+        if (h.idn.look.golden) goldenLeft--;
+        if (h.stationary) h.yaw = h.baseYaw = Math.atan2(start.x - p.x, start.z - p.z) + (Math.random() - 0.5);
+        if (kind === 'king') h.target = this.kingPatrolPoint();
       }
     }
+  }
+
+  private kingPatrolPoint() {
+    const c = this.world.exitPos;
+    const a = Math.random() * Math.PI * 2;
+    const r = 8 + Math.random() * 14;
+    const p = new THREE.Vector3(c.x + Math.cos(a) * r, 0, c.z + 4 + Math.abs(Math.sin(a)) * r);
+    this.world.resolve(p, 1);
+    return p;
   }
 
   private spawnObjectives() {
@@ -259,7 +260,7 @@ export class Game {
           const rig = buildAnimal(this.animal.id, this.animal.color, this.animal.accent, 0.5);
           rig.root.position.copy(p);
           this.world.scene.add(rig.root);
-          const tag = textSprite('Mom?! 😭', { size: 0.6 });
+          const tag = textSprite('Mom?!', { size: 0.6 });
           tag.position.y = 3.2;
           tag.name = 'tag';
           rig.root.add(tag);
@@ -267,11 +268,185 @@ export class Game {
         }
       }
     }
+    if (this.map.id === 'lodge') {
+      // The Old Moose, in a gold-padlocked cage by the lodge door.
+      const cage = buildSecretItem('cage');
+      cage.getObjectByName('critter')?.removeFromParent();
+      cage.scale.set(2.6, 2.4, 2.6);
+      const e = this.world.exitPos;
+      cage.position.set(e.x, this.world.height(e.x, e.z), e.z);
+      const moose = buildAnimal('moose', 0x5b3d26, 0xd9c9a3, 0.38);
+      moose.root.rotation.y = 0.4;
+      cage.add(moose.root);
+      this.world.scene.add(cage);
+      this.mooseCage = cage;
+      this.world.colliders.push({ x: e.x, z: e.z, r: 2.6, blocksSight: false });
+      const tag = textSprite('Psst. Kid. Get me outta here.', { size: 0.25 });
+      tag.position.y = 2.2;
+      cage.add(tag);
+    }
   }
 
   onResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
+  }
+
+  // --- Secrets ----------------------------------------------------------
+
+  private addProp(item: SecretItem, pos: THREE.Vector3, sabotage: boolean) {
+    const obj = buildSecretItem(item);
+    pos.y = this.world.height(pos.x, pos.z);
+    obj.position.copy(pos);
+    this.world.scene.add(obj);
+    const prop: SecretProp = { obj, pos, item, sabotage, done: false };
+    this.secret!.props.push(prop);
+    if (sabotage && item !== 'decoy') this.world.colliders.push({ x: pos.x, z: pos.z, r: item === 'cage' ? 1.2 : 1, blocksSight: false });
+    return prop;
+  }
+
+  private spawnSecretTrigger(def: SecretDef) {
+    this.secret = { def, found: false, step: -1, progress: 0, props: [], done: false };
+    // Hidden somewhere off the beaten path: far from the start and away from the exit.
+    let p = this.world.freePoint(12, this.world.playerStart, 55);
+    for (let i = 0; i < 10 && p.distanceTo(this.world.exitPos) < 30; i++) p = this.world.freePoint(12, this.world.playerStart, 55);
+    this.addProp(def.trigger, p, false);
+  }
+
+  private startSecretStep(i: number, from: THREE.Vector3) {
+    const s = this.secret!;
+    s.step = i;
+    const step = s.def.steps[i];
+    s.progress = i === 0 && step.item === s.def.trigger ? 1 : 0;
+    if (step.kind === 'trail') {
+      this.spawnTrailItem(step.item, from);
+    } else {
+      for (let k = 0; k < step.count; k++) {
+        let p: THREE.Vector3;
+        if (step.item === 'charger') {
+          const t = pick(this.world.trucks);
+          p = t.clone().add(new THREE.Vector3(t.x > 0 ? -5 : 5, 0, -4));
+        } else {
+          p = this.world.freePoint(10, this.player.pos, 20);
+        }
+        this.addProp(step.item, p, true);
+      }
+    }
+    this.hud.toast(step.label, 'secret');
+  }
+
+  private spawnTrailItem(item: SecretItem, from: THREE.Vector3) {
+    // The next item appears a short walk away, so the trail leads you across the map.
+    for (let tries = 0; tries < 40; tries++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = 18 + Math.random() * 18;
+      const p = new THREE.Vector3(from.x + Math.cos(a) * d, 0, from.z + Math.sin(a) * d);
+      if (Math.abs(p.x) > this.world.half - 8 || Math.abs(p.z) > this.world.half - 8) continue;
+      if (this.world.colliders.some((c) => Math.hypot(p.x - c.x, p.z - c.z) < c.r + 1.2)) continue;
+      if (this.world.inWater(p.x, p.z)) continue;
+      this.addProp(item, p, false);
+      return;
+    }
+    this.addProp(item, this.world.freePoint(10), false);
+  }
+
+  private advanceSecret(at: THREE.Vector3) {
+    const s = this.secret!;
+    const step = s.def.steps[s.step];
+    s.progress++;
+    if (s.progress < step.count) {
+      if (step.kind === 'trail') this.spawnTrailItem(step.item, at);
+      return;
+    }
+    if (s.step + 1 < s.def.steps.length) {
+      this.startSecretStep(s.step + 1, at);
+      return;
+    }
+    s.done = true;
+    sfx.win();
+    haptic('success');
+    this.hud.toast(`Case file updated: "${s.def.title}"`, 'secret');
+    this.opts.onEvent({ type: 'secretDone', map: this.map.id });
+  }
+
+  private updateSecret(dt: number) {
+    const s = this.secret;
+    if (!s) return;
+    const p = this.player;
+    for (const prop of s.props) {
+      if (prop.done) continue;
+      prop.obj.rotation.y += dt * (prop.sabotage ? 0 : 1.5);
+      if (!prop.sabotage) prop.obj.position.y = prop.pos.y + 0.4 + Math.sin(this.time * 3) * 0.15;
+      if (prop.item === 'decoy') {
+        prop.obj.position.y = prop.pos.y + Math.sin(this.time * 2 + prop.pos.x) * 0.08;
+        const led = prop.obj.getObjectByName('led');
+        if (led) led.visible = Math.floor(this.time * 3) % 2 === 0;
+      }
+      if (prop.sabotage) continue;
+      if (Math.hypot(prop.pos.x - p.pos.x, prop.pos.z - p.pos.z) < 1.6 + p.radius && Math.abs(prop.pos.y - p.pos.y) < 3) {
+        prop.done = true;
+        this.world.scene.remove(prop.obj);
+        sfx.rescue();
+        if (!s.found) {
+          s.found = true;
+          this.hud.toast(s.def.found, 'secret');
+          this.opts.onEvent({ type: 'secretFound', map: this.map.id });
+          this.startSecretStep(0, prop.pos);
+        } else {
+          this.advanceSecret(prop.pos);
+        }
+      }
+    }
+    const step = s.found && !s.done ? s.def.steps[s.step] : null;
+    this.hud.setSecret(step ? { label: step.label, have: s.progress, need: step.count } : s.done ? { label: `Secret solved: ${s.def.title}`, have: 1, need: 1 } : null);
+  }
+
+  /** Boop a sabotage prop (cage, decoy, charger). */
+  private sabotage(prop: SecretProp) {
+    prop.done = true;
+    sfx.boop();
+    haptic('light');
+    if (prop.item === 'cage') {
+      const critter = prop.obj.getObjectByName('critter');
+      if (critter) {
+        const world = new THREE.Vector3();
+        critter.getWorldPosition(world);
+        critter.removeFromParent();
+        critter.position.copy(world);
+        this.addFx(critter, 3, (fx, d) => {
+          fx.obj.position.addScaledVector(fx.vel!, d);
+          fx.vel!.y -= 4 * d;
+          fx.obj.rotation.y += d * 6;
+        }, new THREE.Vector3((Math.random() - 0.5) * 6, 6, (Math.random() - 0.5) * 6));
+      }
+      prop.obj.children.filter((c) => c.position.y > 0.5 && c.position.y < 1.2).forEach((c) => (c.visible = false));
+      this.hud.toast(pick(['"FREEDOM!" squawks the parrot.', '"Thanks, kid!" The monkey bolts.', '"The Lodge! They\'re taking everyone to the Lodge!"']), 'secret');
+    } else if (prop.item === 'decoy') {
+      this.burst(prop.pos, 0x8d6e63, 14);
+      this.world.scene.remove(prop.obj);
+      this.hud.toast(pick(['*BZZT* QUACK.EXE HAS STOPPED', 'The decoy sparks and sinks.', 'Robo-decoy: popped.']), 'secret');
+    } else if (prop.item === 'charger') {
+      this.burst(prop.pos.clone().add(new THREE.Vector3(0, 1.2, 0)), 0x22d3ee, 18);
+      for (const h of this.hunters) {
+        if (h.kind !== 'ebike') continue;
+        h.unplugged = true;
+        h.say('My battery!! NOOO!');
+      }
+      this.hud.toast('Charger unplugged. Every e-bike in the woods just died.', 'secret');
+    }
+    this.advanceSecret(prop.pos);
+  }
+
+  private burst(pos: THREE.Vector3, color: number, n: number) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), mat(color));
+      m.position.copy(pos).add(new THREE.Vector3(0, 0.5, 0));
+      this.addFx(m, 0.9, (fx, d) => {
+        fx.vel!.y -= 15 * d;
+        fx.obj.position.addScaledVector(fx.vel!, d);
+        fx.obj.rotation.x += d * 8;
+      }, new THREE.Vector3((Math.random() - 0.5) * 8, 4 + Math.random() * 5, (Math.random() - 0.5) * 8));
+    }
   }
 
   // --- Objectives -------------------------------------------------------
@@ -297,13 +472,14 @@ export class Game {
     if (hasExit && othersDone && !this.exitOpen) {
       this.exitOpen = true;
       this.world.exitGroup.visible = true;
-      this.hud.toast(this.map.snow ? 'Head to the cave! Follow the light!' : 'The fence gap is open! Follow the light!', 'good');
+      const msg = this.map.id === 'lodge' ? 'The King dropped the cage key! Free the Old Moose!' : this.map.snow ? 'Head to the cave! Follow the light!' : 'The fence gap is open! Follow the light!';
+      this.hud.toast(msg, 'good');
       sfx.rescue();
     }
     if (views.every((v) => v.done)) this.finish(true);
   }
 
-  // --- Player -----------------------------------------------------------
+  // --- Player abilities -------------------------------------------------
 
   private useAbility() {
     const p = this.player;
@@ -314,12 +490,13 @@ export class Game {
     switch (this.animal.id) {
       case 'deer':
         sfx.sniff();
-        this.hud.toast('*SNIIIIFF* You smell... hunters. And Axe body spray.', 'info');
+        this.hud.toast('*SNIIIIFF* You smell... hunters. And body spray.', 'info');
         break;
       case 'rabbit':
         sfx.boing();
         p.vel.y = this.animal.jump * 1.7;
         p.onGround = false;
+        p.snareT = 0;
         break;
       case 'skunk': {
         sfx.fart();
@@ -331,90 +508,223 @@ export class Game {
         }
         g.position.copy(p.pos);
         this.world.scene.add(g);
-        this.clouds.push({ pos: p.pos.clone(), r: 7, life: a.duration, obj: g });
+        this.clouds.push({ pos: p.pos.clone(), r: 7, life: a.duration, obj: g, hits: 0 });
         break;
       }
       case 'bear': {
         sfx.roar();
+        haptic('heavy');
         this.shake = 0.6;
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.15, 4, 24).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true }));
-        ring.position.copy(p.pos).add(new THREE.Vector3(0, 1, 0));
-        this.addFx(ring, 0.6, (fx) => {
-          const k = 1 - fx.life / fx.max;
-          fx.obj.scale.setScalar(1 + k * 13);
-          ((fx.obj as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 1 - k;
-        });
+        this.ring(p.pos, 13);
+        let n = 0;
         for (const h of this.hunters) {
-          if (h.pos.distanceTo(p.pos) < 13) this.knockDown(h, 4.5, true);
+          if (h.state === 'hidden' || h.pos.distanceTo(p.pos) >= 13) continue;
+          if (this.knockDown(h, 4.5, 'roar')) n++;
         }
+        if (n) this.opts.onEvent({ type: 'roar', count: n });
         break;
       }
       case 'duck':
         sfx.quack();
         p.flying = true;
-        this.hud.toast('🦆 IT\'S DUCK SEASON (shotguns can see you!)', 'bad');
+        p.snareT = 0;
+        this.hud.toast('IT\'S DUCK SEASON (shotguns can see you!)', 'bad');
+        break;
+      case 'moose':
+        sfx.roar();
+        haptic('heavy');
+        p.invuln = Math.max(p.invuln, a.duration);
+        p.snareT = 0;
         break;
     }
   }
 
-  private tryBoop() {
+  private ring(pos: THREE.Vector3, radius: number) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.15, 4, 24).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true }));
+    ring.position.copy(pos).add(new THREE.Vector3(0, 1, 0));
+    this.addFx(ring, 0.6, (fx) => {
+      const k = 1 - fx.life / fx.max;
+      fx.obj.scale.setScalar(1 + k * radius);
+      ((fx.obj as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 1 - k;
+    });
+  }
+
+  /** What the BOOP button would hit right now. */
+  private boopTarget(): { hunter?: Hunter; prop?: SecretProp } | null {
     const p = this.player;
     let best: Hunter | null = null;
     let bestD = 2.8 + p.radius;
     for (const h of this.hunters) {
-      const d = h.pos.distanceTo(p.pos);
+      if (h.state === 'hidden') continue;
+      const d = Math.hypot(h.pos.x - p.pos.x, h.pos.z - p.pos.z) / Math.max(1, h.rig.root.scale.x * 0.8);
       if (d < bestD) {
         best = h;
         bestD = d;
       }
     }
-    if (!best) return;
-    if (this.canBoop(best)) {
+    if (this.secret) {
+      for (const prop of this.secret.props) {
+        if (!prop.sabotage || prop.done) continue;
+        const d = Math.hypot(prop.pos.x - p.pos.x, prop.pos.z - p.pos.z) - (prop.item === 'charger' ? 1.2 : 0.6);
+        if (d < bestD) return { prop };
+      }
+    }
+    return best ? { hunter: best } : null;
+  }
+
+  private tryBoop() {
+    const t = this.boopTarget();
+    if (!t) return;
+    if (t.prop) {
+      this.sabotage(t.prop);
+      return;
+    }
+    const h = t.hunter!;
+    if (this.canBoop(h)) {
       sfx.boop();
-      this.knockDown(best, 5, false);
-    } else {
-      best.suspicion = 1;
-      best.state = 'alert';
-      best.lastSeen.copy(p.pos);
-      best.say('HEY! I see you!');
+      haptic('light');
+      this.knockDown(h, 5, 'boop');
+    } else if (h.state !== 'stunned') {
+      h.suspicion = 1;
+      h.state = 'alert';
+      h.lastSeen.copy(this.player.pos);
+      h.say(h.kind === 'king' ? 'Ha! Not while I\'m looking, deer!' : 'HEY! I see you!');
       sfx.alert();
     }
   }
 
   private canBoop(h: Hunter) {
-    if (h.state === 'stunned') return false;
-    if (h.state === 'stinky') return true;
+    if (h.state === 'stunned' || h.state === 'hidden' || h.state === 'flee') return false;
+    if (h.state === 'stinky' || h.state === 'sleep') return true;
+    if (h.kind === 'king' && h.vulnerableT > 0) return true;
     const toP = this.player.pos.clone().sub(h.pos).setY(0).normalize();
     const behind = toP.dot(h.forward) < -0.1;
     return behind && h.state !== 'alert';
   }
 
-  private knockDown(h: Hunter, dur: number, roar: boolean) {
+  private makeHatEntry(h: Hunter): HatEntry {
+    const idn = h.idn;
+    return {
+      id: idn.id,
+      kind: idn.kind,
+      name: h.name,
+      weightLbs: idn.weightLbs,
+      heightIn: idn.heightIn,
+      statLabel: h.def.stat.label,
+      statValue: idn.statValue,
+      personality: PERSONALITY_LABEL[idn.personality],
+      score: trophyScore(idn),
+      golden: idn.look.golden,
+      map: this.map.id,
+      date: new Date().toISOString().slice(0, 10),
+      look: { ...idn.look },
+    };
+  }
+
+  private dropHat(h: Hunter, entry: HatEntry | null, hatObj?: THREE.Object3D) {
+    const world = new THREE.Vector3();
+    (hatObj ?? h.rig.hat ?? h.rig.root).getWorldPosition(world);
+    if (hatObj) hatObj.visible = false;
+    else if (h.rig.hat) h.rig.hat.visible = false;
+    const obj = buildHatPickup(h.idn.look.hatColor, h.idn.look.golden || h.kind === 'king');
+    obj.position.copy(world);
+    this.world.scene.add(obj);
+    const away = h.pos.clone().sub(this.player.pos).setY(0).normalize().multiplyScalar(2.5);
+    this.hatsOnGround.push({ obj, pos: world.clone(), vel: new THREE.Vector3(away.x, 7, away.z), age: 0, entry });
+  }
+
+  /** Returns true if the hunter actually went down. */
+  private knockDown(h: Hunter, dur: number, cause: 'boop' | 'roar' | 'charge' | 'trap'): boolean {
+    if (h.state === 'hidden' || h.state === 'stunned' || h.state === 'flee') return false;
+    const asleep = h.state === 'sleep';
+    if (h.kind === 'king') return this.hitKing(h, cause);
     h.state = 'stunned';
     h.stunT = dur;
     h.suspicion = 0;
     h.aim = 0;
     h.setMarker('');
+    if (cause === 'boop' || cause === 'charge') this.opts.onEvent({ type: 'boop', kind: h.kind, asleep });
+    if (h.dog && h.dog.freeT < 999) {
+      h.dog.freeT = 9999;
+      this.dogSay(h, 'Yip! (free!)');
+    }
+    if (h.drone && !h.drone.crashed) {
+      h.drone.crashed = true;
+      h.drone.light.visible = false;
+      this.hud.toast('The drone wobbles... and crashes into a tree.', 'good');
+      this.opts.onEvent({ type: 'drone' });
+    }
     if (h.hatOn) {
       h.hatOn = false;
-      this.progress.boop++;
-      if (h.rig.hat) {
-        const world = new THREE.Vector3();
-        h.rig.hat.getWorldPosition(world);
-        h.rig.hat.visible = false;
-        const flying = buildHatPickup();
-        flying.position.copy(world);
-        this.addFx(flying, 1.4, (fx, dt) => {
-          fx.vel!.y -= 15 * dt;
-          fx.obj.position.addScaledVector(fx.vel!, dt);
-          fx.obj.rotation.x += dt * 10;
-        }, new THREE.Vector3((Math.random() - 0.5) * 4, 8, (Math.random() - 0.5) * 4));
-      }
-      h.say(roar ? 'AAAAH! BEAR!' : pick(BOOP_QUIPS));
-      this.hud.toast(roar ? `${h.def.name} dropped his hat!` : `BOOPED ${h.def.name}! Hat stolen 🧢`, 'good');
+      this.dropHat(h, this.makeHatEntry(h));
+      h.say(cause === 'roar' ? 'AAAAH! BEAR!' : cause === 'trap' ? `OW! ${pick(['TAMMY!', 'WHO PUT THIS HERE', 'MY ANKLE'])}` : pick(BOOP_QUIPS));
+      this.hud.toast(`${h.name} dropped their hat! Grab it.`, 'good');
     } else {
-      h.say(roar ? 'Not the bear again!' : 'I don\'t even HAVE a hat!');
+      h.say(cause === 'roar' ? 'Not the bear again!' : 'I don\'t even HAVE a hat anymore!');
     }
+    return true;
+  }
+
+  private hitKing(h: Hunter, cause: string): boolean {
+    const behind = this.player.pos.clone().sub(h.pos).setY(0).normalize().dot(h.forward) < -0.1;
+    const open = h.vulnerableT > 0 || h.state === 'stinky' || (behind && h.state !== 'alert');
+    if (!open || h.hatsLeft <= 0) {
+      if (cause !== 'trap') h.say(pick(['Ha! Nice try.', 'Is that all, Bambi?', 'GUARDS!']), 1.8);
+      return false;
+    }
+    h.hatsLeft--;
+    this.progress.boss++;
+    this.opts.onEvent({ type: 'boop', kind: 'king', asleep: false });
+    const hats = h.rig.hats ?? [];
+    const hatObj = hats[2 - h.hatsLeft];
+    this.shake = 0.4;
+    haptic('heavy');
+    sfx.boop();
+    h.state = 'stunned';
+    h.stunT = 2.5;
+    h.vulnerableT = 0;
+    h.aim = 0;
+    h.enrage++;
+    h.setMarker('');
+    if (h.hatsLeft > 0) {
+      if (hatObj) this.dropHat(h, null, hatObj);
+      h.say(h.hatsLeft === 2 ? 'MY CROWN! Do you know what that COST?!' : 'Not the top hat! GUARDS! MORE GUARDS!');
+      this.hud.toast(`The Trophy King lost a hat! ${h.hatsLeft} to go.`, 'good');
+      // Reinforcements roll up from the trucks.
+      const t = pick(this.world.trucks);
+      const g = this.spawnHunter(pick(['rifle', 'shotgun'] as HunterKind[]), t.clone().add(new THREE.Vector3(3, 0, 3)), false);
+      g.state = 'search';
+      g.suspicion = 0.7;
+      g.lastSeen.copy(this.player.pos);
+      g.say('Coming, your majesty!');
+    } else {
+      if (hatObj) this.dropHat(h, this.makeHatEntry(h), hatObj);
+      this.kingDefeated = true;
+      h.state = 'flee';
+      h.target = this.nearestTruck(h.pos);
+      h.say('WAAAH! I\'m telling my MOTHER!', 4);
+      this.hud.toast('The Trophy King runs crying to his golden truck!', 'good');
+      for (const o of this.hunters) {
+        if (o === h || o.state === 'hidden') continue;
+        o.state = 'flee';
+        o.target = this.nearestTruck(o.pos);
+        o.say(pick(['Every man for himself!', 'I\'m not paid enough for this!', 'Wait for me, sire!']));
+      }
+    }
+    return true;
+  }
+
+  private nearestTruck(from: THREE.Vector3) {
+    let best = this.world.trucks[0] ?? from.clone().setZ(this.world.half);
+    let bd = Infinity;
+    for (const t of this.world.trucks) {
+      const d = t.distanceTo(from);
+      if (d < bd) {
+        bd = d;
+        best = t;
+      }
+    }
+    return best.clone();
   }
 
   private damage(source: Hunter) {
@@ -424,13 +734,14 @@ export class Game {
     p.invuln = 2;
     this.hitsTaken++;
     sfx.hit();
+    haptic('warning');
     this.hud.hurt();
     this.shake = 0.35;
-    this.hud.toast(`${pick(HIT_QUIPS)} (${source.def.name})`, 'bad');
-    if (p.hearts <= 0) {
-      this.finish(false, source.def);
-    }
+    this.hud.toast(`${pick(HIT_QUIPS)} (${source.name})`, 'bad');
+    if (p.hearts <= 0) this.finish(false, source);
   }
+
+  // --- Player -----------------------------------------------------------
 
   private updatePlayer(dt: number) {
     const p = this.player;
@@ -444,15 +755,18 @@ export class Game {
     p.abilityCd = Math.max(0, p.abilityCd - dt);
     p.abilityT = Math.max(0, p.abilityT - dt);
     p.invuln = Math.max(0, p.invuln - dt);
+    p.snareT = Math.max(0, p.snareT - dt);
     if (p.flying && p.abilityT <= 0) p.flying = false;
+    const charging = a.id === 'moose' && p.abilityT > 0;
 
     // Movement relative to camera.
     const fwd = new THREE.Vector3(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
     const right = new THREE.Vector3(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
-    const dir = fwd.multiplyScalar(-inp.moveY).add(right.multiplyScalar(inp.moveX));
+    let dir = fwd.multiplyScalar(-inp.moveY).add(right.multiplyScalar(inp.moveX));
     const mag = Math.min(1, dir.length());
-    p.moving = mag > 0.05;
-    p.sprinting = p.moving && inp.sprint && !p.winded && !p.flying;
+    if (charging) dir = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
+    p.moving = (mag > 0.05 || charging) && p.snareT <= 0;
+    p.sprinting = p.moving && inp.sprint && !p.winded && !p.flying && !charging;
     if (p.sprinting) {
       p.stamina -= dt / a.stamina;
       if (p.stamina <= 0) {
@@ -468,6 +782,7 @@ export class Game {
     if (w.inWater(p.pos.x, p.pos.z) && !p.flying) speed *= a.id === 'duck' ? 1.3 : 0.55;
     if (a.id === 'rabbit' && p.abilityT > 0) speed *= 2;
     if (p.flying) speed = a.runSpeed * 1.4;
+    if (charging) speed = a.runSpeed * 2.3;
     p.speed = p.moving ? speed : 0;
     if (p.moving) {
       dir.normalize();
@@ -479,6 +794,14 @@ export class Game {
     }
     w.resolve(p.pos, p.radius, this.exitOpen);
 
+    if (charging) {
+      for (const h of this.hunters) {
+        if (Math.hypot(h.pos.x - p.pos.x, h.pos.z - p.pos.z) < p.radius + 1.6) {
+          if (this.knockDown(h, 4, 'charge')) this.shake = 0.3;
+        }
+      }
+    }
+
     const ground = w.height(p.pos.x, p.pos.z);
     if (p.flying) {
       const targetY = ground + 11;
@@ -486,7 +809,7 @@ export class Game {
       p.vel.y = 0;
       p.onGround = false;
     } else {
-      if (inp.consume('Space') && p.onGround) {
+      if (inp.consume('Space') && p.onGround && p.snareT <= 0) {
         p.vel.y = a.jump;
         p.onGround = false;
         sfx.whoosh();
@@ -504,20 +827,18 @@ export class Game {
     const r = p.rig;
     r.root.position.copy(p.pos);
     r.root.rotation.y = p.yaw;
-    p.phase += dt * (p.moving ? speed * 1.6 : 0);
-    const swing = p.moving && p.onGround ? Math.sin(p.phase) * 0.7 : 0;
+    p.phase += dt * (p.moving ? speed * 1.6 : p.snareT > 0 ? 30 : 0);
+    const swing = (p.moving && p.onGround) || p.snareT > 0 ? Math.sin(p.phase) * 0.7 : 0;
     r.legs.forEach((l, i) => (l.rotation.x = (i === 0 || i === 3 ? swing : -swing) * (a.id === 'duck' ? 0.8 : 1)));
     if (a.id === 'rabbit' && p.moving && p.onGround) r.body.position.y = Math.abs(Math.sin(p.phase * 0.5)) * 0.4;
     else r.body.position.y = p.moving && p.onGround ? Math.abs(Math.sin(p.phase)) * 0.08 : 0;
-    r.body.rotation.x = !p.onGround && !p.flying ? -Math.sign(p.vel.y) * 0.25 : 0;
+    r.body.rotation.x = charging ? 0.25 : !p.onGround && !p.flying ? -Math.sign(p.vel.y) * 0.25 : 0;
     if (r.wings) r.wings.forEach((wg, i) => (wg.rotation.z = p.flying || !p.onGround ? Math.sin(this.time * 25) * 0.9 * (i ? 1 : -1) : 0));
-    r.root.visible = p.invuln > 0 ? Math.floor(this.time * 15) % 2 === 0 : true;
+    r.root.visible = p.invuln > 0 && !charging ? Math.floor(this.time * 15) % 2 === 0 : true;
 
     // Food
     for (const f of this.foods) {
-      if (f.eaten) {
-        continue;
-      }
+      if (f.eaten) continue;
       f.obj.rotation.y += dt * 2;
       f.obj.position.y = f.pos.y + 0.7 + Math.sin(this.time * 3 + f.pos.x) * 0.15;
       if (f.pos.distanceTo(p.pos) < 1.6 + p.radius) {
@@ -529,6 +850,62 @@ export class Game {
         if (this.progress.eat <= need) this.hud.toast(`Nom! (${this.progress.eat}/${need})`, 'good');
       }
     }
+
+    // Hats on the ground
+    for (const hat of this.hatsOnGround) {
+      hat.age += dt;
+      const gy = w.height(hat.pos.x, hat.pos.z) + 0.5;
+      if (hat.pos.y > gy || hat.vel.y > 0) {
+        hat.vel.y -= 18 * dt;
+        hat.pos.addScaledVector(hat.vel, dt);
+        if (hat.pos.y < gy) {
+          hat.pos.y = gy;
+          hat.vel.set(0, 0, 0);
+        }
+        hat.obj.rotation.x += dt * 8;
+      } else {
+        hat.obj.rotation.x = 0;
+        hat.obj.rotation.y += dt * 2;
+        hat.pos.y = gy + Math.sin(this.time * 3) * 0.1;
+      }
+      hat.obj.position.copy(hat.pos);
+      if (hat.entry && hat.age > 0.4 && Math.hypot(hat.pos.x - p.pos.x, hat.pos.z - p.pos.z) < 1.5 + p.radius && Math.abs(hat.pos.y - p.pos.y) < 3) {
+        this.world.scene.remove(hat.obj);
+        hat.age = -1;
+        this.progress.boop++;
+        this.runHats.push(hat.entry);
+        this.opts.onEvent({ type: 'hat', entry: hat.entry });
+        sfx.chomp();
+        this.hud.toast(`Hat logged: ${hat.entry.name} (score ${hat.entry.score})`, hat.entry.golden ? 'secret' : 'good');
+      }
+    }
+    this.hatsOnGround = this.hatsOnGround.filter((h) => h.age >= 0);
+
+    // Traps
+    for (const t of this.traps) {
+      if (t.sprung > 0) {
+        t.sprung += dt;
+        continue;
+      }
+      if (p.onGround && !p.flying && p.snareT <= 0 && p.invuln <= 0 && Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z) < 0.6 + p.radius) {
+        t.sprung = 0.01;
+        p.snareT = 1.6;
+        sfx.hit();
+        haptic('warning');
+        this.hud.toast('SNARED! Wiggling free...', 'bad');
+        this.opts.onEvent({ type: 'trap' });
+        const o = t.owner;
+        if (!o.oblivious) {
+          o.suspicion = Math.max(o.suspicion, 0.85);
+          o.lastSeen.copy(p.pos);
+          o.state = 'search';
+          o.searchT = 0;
+          o.say('Ooh! Got something!');
+        }
+      }
+    }
+    for (const t of this.traps) if (t.sprung > 1.5) this.world.scene.remove(t.obj);
+    this.traps = this.traps.filter((t) => t.sprung <= 1.5);
 
     // Babies
     let leader: THREE.Vector3 = p.pos;
@@ -566,7 +943,12 @@ export class Game {
     if (this.exitOpen) {
       this.world.exitGroup.rotation.y += dt;
       const e = this.world.exitPos;
-      if (Math.hypot(p.pos.x - e.x, p.pos.z - e.z) < 4.5) this.progress.exit = 1;
+      if (Math.hypot(p.pos.x - e.x, p.pos.z - e.z) < (this.map.id === 'lodge' ? 5 : 4.5)) {
+        this.progress.exit = 1;
+        if (this.mooseCage) {
+          this.mooseCage.children.filter((c) => c.type === 'Mesh' && c.position.y > 0.5 && c.position.y < 1.2).forEach((c) => (c.visible = false));
+        }
+      }
     }
   }
 
@@ -578,7 +960,7 @@ export class Game {
     const target = p.pos.clone().add(new THREE.Vector3(0, p.rig.height * 0.5, 0));
     const to = target.clone().sub(eye);
     const dist = Math.hypot(to.x, to.z);
-    const duckSeason = p.flying && h.def.kind === 'shotgun';
+    const duckSeason = p.flying && (h.kind === 'shotgun' || h.kind === 'king');
     let vis = this.animal.visibility;
     if (!p.moving) vis *= 0.55;
     else if (p.sprinting) vis *= 1.2;
@@ -586,6 +968,8 @@ export class Game {
     if (!p.flying && this.world.inBush(p.pos.x, p.pos.z) && dist > 3.5) vis *= 0.28;
     if (p.flying) vis *= duckSeason ? 2.2 : 1.0;
     if (this.map.snow && this.animal.id !== 'rabbit') vis *= 1.1;
+    if (this.map.night) vis *= 0.85;
+    if (h.idn.look.tipsy) vis *= 0.85;
     const range = h.def.viewRange * Math.min(1.6, vis);
     if (dist > range) return { seen: false, dist, rate: 0 };
     const flat = to.clone().setY(0).normalize();
@@ -608,29 +992,30 @@ export class Game {
     const to = target.clone().sub(h.pos).setY(0);
     const d = to.length();
     if (d < 1.2) return true;
-    this.faceTowards(h, target.x, target.z, dt, h.def.kind === 'ebike' ? 3 : 5);
+    this.faceTowards(h, target.x, target.z, dt, h.kind === 'ebike' ? 3 : 5);
     h.pos.addScaledVector(h.forward, Math.min(d, speed * dt));
-    this.world.resolve(h.pos, h.def.kind === 'ebike' ? 0.9 : 0.5);
+    this.world.resolve(h.pos, h.kind === 'ebike' || h.kind === 'king' ? 0.9 : 0.5);
     h.phase += dt * speed * 2.2;
     return false;
   }
 
-  private alertOthers(origin: THREE.Vector3, radius: number, where: THREE.Vector3, except: Hunter) {
+  /** Radio/gunshot: nearby hunters come running to where the noise pointed. */
+  private alertOthers(origin: THREE.Vector3, radius: number, where: THREE.Vector3, except: Hunter | null, lines?: string[]) {
     if (radius <= 0) return;
     for (const o of this.hunters) {
-      if (o === except || o.state === 'stunned' || o.state === 'stinky' || o.state === 'alert') continue;
+      if (o === except || o.oblivious || o.state === 'alert' || o.stationary) continue;
       if (o.pos.distanceTo(origin) > radius) continue;
       o.suspicion = Math.max(o.suspicion, 0.6);
       o.lastSeen.copy(where);
       o.state = 'search';
       o.searchT = 0;
-      if (Math.random() < 0.5) o.say(pick(['Was that Randy?', 'Shots fired! Free venison!', 'Ooh, where?!', 'Save some for me!']));
+      if (Math.random() < 0.5) o.say(pick(lines ?? ['Was that Randy?', 'Shots fired! Free venison!', 'Ooh, where?!', 'Save some for me!']));
     }
   }
 
   private fire(h: Hunter, dist: number) {
     const p = this.player;
-    const from = h.eye().add(h.forward.multiplyScalar(0.9)).add(new THREE.Vector3(0, -0.3, 0));
+    const from = h.eye().add(h.forward.multiplyScalar(0.9 * h.rig.root.scale.x)).add(new THREE.Vector3(0, -0.3, 0));
     const target = p.pos.clone().add(new THREE.Vector3(0, p.rig.height * 0.45, 0));
     const vol = Math.max(0.15, 1 - dist / 80);
     const kind = h.def.projectile;
@@ -655,15 +1040,16 @@ export class Game {
       return;
     }
 
-    let chance = h.def.accuracy;
+    let chance = h.accuracy;
     if (p.sprinting) chance -= 0.3;
     else if (p.moving) chance -= 0.12;
     chance -= (dist / h.def.viewRange) * 0.35;
     if (kind === 'pellets') chance += dist < 8 ? 0.2 : -0.15;
-    if (p.flying && h.def.kind === 'shotgun') chance += 0.15;
+    if (p.flying && h.kind === 'shotgun') chance += 0.15;
     if (this.animal.id === 'rabbit') chance -= 0.1;
     if (!p.onGround && !p.flying) chance -= 0.2;
-    if (this.animal.id === 'bear') chance += 0.08;
+    if (this.animal.id === 'bear' || this.animal.id === 'moose') chance += 0.08;
+    if (p.snareT > 0) chance += 0.2;
     const hit = Math.random() < Math.max(0.08, Math.min(0.9, chance * 0.78));
 
     const shots = kind === 'pellets' ? 5 : 1;
@@ -689,15 +1075,125 @@ export class Game {
     this.alertOthers(h.pos, h.def.loudness, p.pos, h);
   }
 
+  private dogSay(h: Hunter, text: string) {
+    const dog = h.dog!;
+    if (dog.bubble) dog.rig.root.remove(dog.bubble);
+    dog.bubble = textSprite(text, { size: 0.55 });
+    dog.bubble.position.y = 1.8;
+    dog.rig.root.add(dog.bubble);
+    setTimeout(() => {
+      if (dog.bubble) dog.rig.root.remove(dog.bubble);
+      dog.bubble = null;
+    }, 1200);
+  }
+
+  private stinkNear(pos: THREE.Vector3, extra = 0) {
+    return this.clouds.some((c) => c.pos.distanceTo(pos) < c.r + extra);
+  }
+
+  private updateDog(h: Hunter, dt: number) {
+    const dog = h.dog!;
+    const p = this.player;
+    const w = this.world;
+    dog.freeT = Math.max(0, dog.freeT - dt);
+    let goal: THREE.Vector3;
+    let speed = 5;
+    const distToPlayer = dog.pos.distanceTo(p.pos);
+    if (this.stinkNear(dog.pos) && dog.freeT <= 0) {
+      dog.freeT = 8;
+      this.dogSay(h, '*whimper*');
+    }
+    const smells = !this.demo && dog.freeT <= 0 && !h.oblivious && distToPlayer < 13 && !w.inWater(p.pos.x, p.pos.z) && !this.stinkNear(p.pos, 3) && !p.flying;
+    if (dog.freeT > 0 || h.state === 'hidden') {
+      // Off duty: sniff around wherever.
+      if (dog.pos.distanceTo(h.target) < 2 || Math.random() < dt * 0.2) h.target = w.freePoint(8);
+      goal = dog.freeT > 0 ? h.target.clone() : dog.pos;
+      speed = 3;
+    } else if (smells) {
+      dog.barkT -= dt;
+      if (dog.barkT <= 0) {
+        dog.barkT = 1.3;
+        sfx.bark(Math.max(0.2, 1 - distToPlayer / 30));
+        this.dogSay(h, 'WOOF!');
+      }
+      const toward = p.pos.clone().sub(h.pos);
+      if (toward.length() > 7) toward.setLength(7);
+      goal = h.pos.clone().add(toward);
+      speed = 6;
+      h.suspicion = Math.min(1.2, h.suspicion + 0.9 * dt);
+      h.lastSeen.copy(p.pos);
+      if (h.state === 'patrol') h.state = 'curious';
+    } else {
+      goal = h.pos.clone().addScaledVector(h.forward, 2).add(new THREE.Vector3(Math.sin(this.time) * 1.5, 0, 0));
+    }
+    const to = goal.sub(dog.pos).setY(0);
+    const d = to.length();
+    if (d > 0.8) {
+      dog.pos.addScaledVector(to.normalize(), Math.min(d, speed * dt));
+      dog.yaw = Math.atan2(to.x, to.z);
+      dog.phase += dt * speed * 3;
+    }
+    w.resolve(dog.pos, 0.4);
+    dog.pos.y = w.height(dog.pos.x, dog.pos.z);
+    dog.rig.root.position.copy(dog.pos);
+    dog.rig.root.rotation.y = dog.yaw;
+    const s = d > 0.8 ? Math.sin(dog.phase) * 0.7 : 0;
+    dog.rig.legs.forEach((l, i) => (l.rotation.x = i === 0 || i === 3 ? s : -s));
+  }
+
+  private updateDrone(h: Hunter, dt: number) {
+    const d = h.drone!;
+    const w = this.world;
+    const p = this.player;
+    d.alertCd = Math.max(0, d.alertCd - dt);
+    if (d.crashed) {
+      const gy = w.height(d.pos.x, d.pos.z) + 0.2;
+      if (d.pos.y > gy) {
+        d.vy -= 15 * dt;
+        d.pos.y = Math.max(gy, d.pos.y + d.vy * dt);
+        d.obj.rotation.z += dt * 6;
+      }
+      d.obj.position.copy(d.pos);
+      return;
+    }
+    if (d.pos.distanceTo(d.target) < 2) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 8 + Math.random() * 30;
+      const t = new THREE.Vector3(h.home.x + Math.cos(a) * r, 0, h.home.z + Math.sin(a) * r);
+      const lim = w.half - 5;
+      t.x = Math.max(-lim, Math.min(lim, t.x));
+      t.z = Math.max(-lim, Math.min(lim, t.z));
+      t.y = w.height(t.x, t.z) + 10;
+      d.target.copy(t);
+    }
+    const to = d.target.clone().sub(d.pos);
+    d.pos.addScaledVector(to.normalize(), Math.min(to.length(), 5 * dt));
+    d.obj.position.copy(d.pos);
+    d.obj.children.forEach((c) => {
+      if (c.name === 'rotor') c.rotation.y += dt * 40;
+    });
+    if (this.demo || d.alertCd > 0 || h.oblivious) return;
+    const flat = Math.hypot(p.pos.x - d.pos.x, p.pos.z - d.pos.z);
+    const hidden = w.inBush(p.pos.x, p.pos.z) && !p.sprinting;
+    if (flat < 5.2 && !hidden) {
+      d.alertCd = 6;
+      sfx.alert();
+      h.say('Got one on camera! Converging!', 2);
+      this.hud.toast('A drone spotted you! Hunters are on the way.', 'bad');
+      this.alertOthers(p.pos, 60, p.pos, h, ['Copy that, Dan!', 'On my way!', 'Drone says it\'s a big one!']);
+    }
+  }
+
   private updateHunters(dt: number, sniffing: boolean) {
     const p = this.player;
     let maxSus = 0;
     const pings: Ping[] = [];
 
     for (const h of this.hunters) {
-      const kind = h.def.kind;
+      const kind = h.kind;
       h.reload = Math.max(0, h.reload - dt);
       h.spotQuipCd = Math.max(0, h.spotQuipCd - dt);
+      h.vulnerableT = Math.max(0, h.vulnerableT - dt);
       if (h.bubble) {
         h.bubbleT -= dt;
         if (h.bubbleT <= 0) {
@@ -706,9 +1202,23 @@ export class Game {
           h.bubble = null;
         }
       }
+      if (h.dog) this.updateDog(h, dt);
+      if (h.drone) this.updateDrone(h, dt);
+
+      if (h.state === 'hidden') {
+        h.hideT -= dt;
+        if (h.hideT <= 0 && h.kind !== 'king' && !this.kingDefeated) {
+          h.state = 'patrol';
+          h.rig.root.visible = true;
+          h.target = this.world.freePoint(8);
+          h.say('OK. I\'m OK. I\'m back.');
+        }
+        h.laser.visible = false;
+        continue;
+      }
 
       // Stink clouds override everything.
-      if (h.state !== 'stunned') {
+      if (h.state !== 'stunned' && h.state !== 'flee') {
         for (const c of this.clouds) {
           if (h.pos.distanceTo(c.pos) < c.r && h.state !== 'stinky') {
             h.state = 'stinky';
@@ -719,47 +1229,78 @@ export class Game {
             h.say(pick(STINK_QUIPS));
             const away = h.pos.clone().sub(c.pos).setY(0).normalize().multiplyScalar(25);
             h.target = h.pos.clone().add(away);
+            c.hits++;
+            if (c.hits === 3) this.opts.onEvent({ type: 'stink', count: 3 });
           }
         }
       }
 
-      let laserOn = kind === 'ghillie' && h.state !== 'stunned' && h.state !== 'stinky';
+      let laserOn = kind === 'ghillie' && !h.oblivious;
       let laserTarget: THREE.Vector3 | null = null;
 
       if (h.state === 'stunned') {
         h.stunT -= dt;
         h.rig.body.rotation.z += (Math.PI / 2 - h.rig.body.rotation.z) * Math.min(1, dt * 8);
-        if (h.stunT <= 0) {
-          h.state = 'curious';
-          h.suspicion = 0.4;
-          h.lastSeen.copy(p.pos);
-          h.say(pick(['Who did that?!', 'Ow, my pride.', 'I\'m OK! I\'m OK!']));
-        }
-      } else {
+        if (h.stunT <= 0) this.afterStun(h);
+      } else if (h.state !== 'sleep') {
         h.rig.body.rotation.z += (0 - h.rig.body.rotation.z) * Math.min(1, dt * 6);
       }
 
       if (h.state === 'stinky') {
         h.stinkT -= dt;
-        if (kind !== 'ghillie') this.moveTowards(h, h.target, h.def.chaseSpeed, dt);
+        if (!h.stationary) this.moveTowards(h, h.target, h.chaseSpeed, dt);
         h.rig.body.rotation.y = Math.sin(this.time * 20) * 0.15;
         if (h.stinkT <= 0) {
           h.state = 'patrol';
           h.rig.body.rotation.y = 0;
-          h.target = this.world.freePoint(8);
+          h.target = kind === 'king' ? this.kingPatrolPoint() : this.world.freePoint(8);
+        }
+      }
+
+      if (h.state === 'flee') {
+        h.target.y = 0;
+        if (this.moveTowards(h, h.target, h.chaseSpeed * 1.4, dt) || h.pos.distanceTo(h.target) < 3.5) {
+          h.state = 'hidden';
+          h.hideT = 25;
+          h.rig.root.visible = false;
+          h.setMarker('');
+          if (h.dog) h.dog.freeT = 9999;
+        }
+        h.quipT -= dt;
+        if (h.quipT <= 0) {
+          h.quipT = 2.5;
+          h.say(pick(SCARED_QUIPS), 2);
+        }
+      }
+
+      if (h.state === 'sleep') {
+        h.stunT -= dt;
+        h.rig.body.rotation.z += (0.35 - h.rig.body.rotation.z) * Math.min(1, dt * 3);
+        h.quipT -= dt;
+        if (h.quipT <= 0) {
+          h.quipT = 4;
+          h.say(pick(SLEEP_QUIPS), 2);
+        }
+        const woke = p.sprinting && h.pos.distanceTo(p.pos) < 7;
+        if (h.stunT <= 0 || woke) {
+          h.state = woke ? 'curious' : 'patrol';
+          h.suspicion = woke ? 0.5 : 0;
+          h.lastSeen.copy(p.pos);
+          h.sleepT = 25 + Math.random() * 20;
+          h.say(woke ? 'HUH?! *hic* Who\'s there?' : '*yawn* Where am I?');
         }
       }
 
       h.ignoreT = Math.max(0, h.ignoreT - dt);
-      const vis = this.demo || h.ignoreT > 0 || h.state === 'stunned' || h.state === 'stinky' ? { seen: false, dist: h.pos.distanceTo(p.pos), rate: 0 } : this.visibilityTo(h);
+      const vis = this.demo || h.ignoreT > 0 || h.oblivious ? { seen: false, dist: h.pos.distanceTo(p.pos), rate: 0 } : this.visibilityTo(h);
       h.canSee = vis.seen;
 
-      if (h.state !== 'stunned' && h.state !== 'stinky') {
+      if (!h.oblivious) {
         // Perception
         if (vis.seen) {
           h.suspicion += vis.rate * dt * (h.state === 'search' ? 1.8 : 1);
           h.lastSeen.copy(p.pos);
-        } else if (p.sprinting && p.onGround && vis.dist < h.def.hearing * this.animal.noise) {
+        } else if (!this.demo && p.sprinting && p.onGround && vis.dist < h.def.hearing * this.animal.noise) {
           h.suspicion += 0.45 * dt;
           h.lastSeen.copy(p.pos);
           if (h.state === 'patrol') h.state = 'curious';
@@ -775,30 +1316,48 @@ export class Game {
           h.aim = -0.7;
           sfx.alert();
           if (h.spotQuipCd <= 0) {
-            h.say(pick(SPOT_QUIPS), 1.6);
+            h.say(kind === 'drone' ? 'Deer at my chair! DEER AT MY CHAIR!' : pick(SPOT_QUIPS), 1.6);
             h.spotQuipCd = 6;
           }
+          if (kind === 'drone') this.alertOthers(h.pos, 60, p.pos, h, ['Copy that, Dan!', 'Coming, Dan!']);
         } else if (h.state === 'patrol' && h.suspicion > 0.3) {
           h.state = 'curious';
         }
 
         switch (h.state) {
           case 'patrol': {
-            if (kind === 'ghillie') {
+            if (h.stationary) {
               h.yaw = h.baseYaw + Math.sin(this.time * 0.35 + h.phase) * 0.9;
-            } else if (this.moveTowards(h, h.target, h.def.speed, dt)) {
-              h.target = this.world.freePoint(8);
+            } else if (this.moveTowards(h, h.target, h.speed, dt)) {
+              h.target = kind === 'king' ? this.kingPatrolPoint() : this.world.freePoint(8);
             }
+            if (h.idn.look.tipsy) h.yaw += Math.sin(this.time * 1.7 + h.phase) * dt * 1.2;
             h.stuckT += dt;
             if (h.stuckT > 2.5) {
-              if (h.pos.distanceTo(h.lastPos) < 0.5 && kind !== 'ghillie') h.target = this.world.freePoint(8);
+              if (h.pos.distanceTo(h.lastPos) < 0.5 && !h.stationary) h.target = kind === 'king' ? this.kingPatrolPoint() : this.world.freePoint(8);
               h.lastPos.copy(h.pos);
               h.stuckT = 0;
             }
             h.quipT -= dt;
             if (h.quipT <= 0) {
               h.quipT = 9 + Math.random() * 12;
-              if (vis.dist < 45) h.say(pick(h.def.quips));
+              if (vis.dist < 45) h.say(h.unplugged ? 'Anyone got a charger? Anyone?' : pick(h.def.quips));
+            }
+            if (kind === 'drunk' && !this.demo) {
+              h.sleepT -= dt;
+              if (h.sleepT <= 0) {
+                h.state = 'sleep';
+                h.stunT = 10 + Math.random() * 6;
+                h.quipT = 0;
+              }
+            }
+            if (kind === 'trapper' && !this.demo) {
+              h.trapT -= dt;
+              const mine = this.traps.filter((t) => t.owner === h).length;
+              if (h.trapT <= 0 && mine < 3 && h.pos.distanceTo(this.world.playerStart) > 14) {
+                h.trapT = 14 + Math.random() * 8;
+                this.placeTrap(h);
+              }
             }
             break;
           }
@@ -810,17 +1369,17 @@ export class Game {
             }
             break;
           case 'search':
-            if (kind === 'ghillie' || this.moveTowards(h, h.lastSeen, h.def.chaseSpeed * 0.8, dt)) {
+            if (h.stationary || this.moveTowards(h, h.lastSeen, h.chaseSpeed * 0.8, dt)) {
               h.searchT += dt;
               h.yaw += dt * 1.5;
               if (h.searchT > 4) {
                 h.state = 'patrol';
                 h.suspicion = Math.min(h.suspicion, 0.2);
-                h.target = this.world.freePoint(8);
+                h.target = kind === 'king' ? this.kingPatrolPoint() : this.world.freePoint(8);
                 h.say(pick(LOST_QUIPS));
               }
             }
-            if (kind === 'ghillie') this.faceTowards(h, h.lastSeen.x, h.lastSeen.z, dt, 2);
+            if (h.stationary) this.faceTowards(h, h.lastSeen.x, h.lastSeen.z, dt, 2);
             break;
           case 'alert': {
             if (vis.seen) h.lostT = 0;
@@ -832,10 +1391,14 @@ export class Game {
               h.aim = 0;
               break;
             }
+            if (h.def.projectile === 'none') {
+              this.faceTowards(h, h.lastSeen.x, h.lastSeen.z, dt, 4);
+              break;
+            }
             if (kind === 'ebike') {
-              this.moveTowards(h, vis.seen ? p.pos : h.lastSeen, h.def.chaseSpeed, dt);
-              if (Math.random() < dt * 2) sfx.hum(Math.max(0, 1 - vis.dist / 30));
-              if (vis.dist < 1.6 + p.radius && h.reload <= 0 && Math.abs(p.pos.y - h.pos.y) < 1.5) {
+              this.moveTowards(h, vis.seen ? p.pos : h.lastSeen, h.chaseSpeed, dt);
+              if (!h.unplugged && Math.random() < dt * 2) sfx.hum(Math.max(0, 1 - vis.dist / 30));
+              if (!h.unplugged && vis.dist < 1.6 + p.radius && h.reload <= 0 && Math.abs(p.pos.y - h.pos.y) < 1.5) {
                 this.damage(h);
                 h.reload = h.def.reload;
                 h.say(pick(['Sorry! On your left!', 'BIKE LANE!', 'New PR!']), 1.6);
@@ -848,21 +1411,31 @@ export class Game {
               }
               break;
             }
+            if (kind === 'king' && h.vulnerableT > 0) {
+              // Fumbling with shells: he can't aim, and he's boopable from any side.
+              h.rig.body.rotation.x = Math.sin(this.time * 12) * 0.08;
+              break;
+            }
+            h.rig.body.rotation.x = 0;
             const off = this.faceTowards(h, h.lastSeen.x, h.lastSeen.z, dt, 6);
             if (vis.seen && off < 0.25) {
               h.aim += dt;
-              if (kind === 'rifle' || kind === 'ghillie') {
-                laserOn = true;
+              if (kind === 'rifle' || kind === 'ghillie' || kind === 'hound' || kind === 'drunk') {
+                laserOn = kind !== 'drunk';
                 laserTarget = p.pos.clone().add(new THREE.Vector3(0, p.rig.height * 0.45, 0));
               }
-              if (h.aim >= h.def.aimTime && h.reload <= 0) {
+              if (h.aim >= h.aimTime && h.reload <= 0) {
                 this.fire(h, vis.dist);
                 h.aim = 0;
                 h.reload = h.def.reload;
+                if (kind === 'king') {
+                  h.vulnerableT = 3.2 - h.enrage * 0.4;
+                  h.say(pick(['RELOADING! Nobody move!', 'Hold on, hold on, shells...', 'Where are my golden shells?!']), 2);
+                }
               }
             } else {
               if (h.aim > 0) h.aim = Math.max(0, h.aim - dt);
-              if (!vis.seen && kind !== 'ghillie') this.moveTowards(h, h.lastSeen, h.def.chaseSpeed, dt);
+              if (!vis.seen && !h.stationary) this.moveTowards(h, h.lastSeen, h.chaseSpeed, dt);
             }
             break;
           }
@@ -870,10 +1443,12 @@ export class Game {
       }
 
       // Markers
-      if (h.state === 'alert') h.setMarker('!');
-      else if (h.state === 'curious' || h.state === 'search' || h.suspicion > 0.3) h.setMarker('?');
+      if (h.state === 'sleep') h.setMarker('Zz');
+      else if (kind === 'king' && h.vulnerableT > 0) h.setMarker('!!');
+      else if (h.state === 'alert') h.setMarker('!');
+      else if (h.state === 'curious' || h.state === 'search' || (h.suspicion > 0.3 && !h.oblivious)) h.setMarker('?');
       else h.setMarker('');
-      if (h.state !== 'stunned' && h.state !== 'stinky') maxSus = Math.max(maxSus, h.suspicion);
+      if (!h.oblivious) maxSus = Math.max(maxSus, h.suspicion);
 
       // Laser sight
       if (laserOn) {
@@ -883,7 +1458,7 @@ export class Game {
         pos.setXYZ(0, from.x, from.y, from.z);
         pos.setXYZ(1, to.x, to.y, to.z);
         pos.needsUpdate = true;
-        (h.laser.material as THREE.LineBasicMaterial).opacity = laserTarget ? 0.4 + 0.6 * (h.aim / h.def.aimTime) : 0.35;
+        (h.laser.material as THREE.LineBasicMaterial).opacity = laserTarget ? 0.4 + 0.6 * Math.max(0, h.aim / h.aimTime) : 0.35;
         h.laser.visible = true;
       } else {
         h.laser.visible = false;
@@ -893,12 +1468,13 @@ export class Game {
       h.pos.y = this.world.height(h.pos.x, h.pos.z);
       h.rig.root.position.copy(h.pos);
       h.rig.root.rotation.y = h.yaw;
-      const walking = h.state === 'patrol' || h.state === 'search' || h.state === 'stinky' || (h.state === 'alert' && !h.canSee);
-      const s = walking && kind !== 'ghillie' ? Math.sin(h.phase) * 0.6 : 0;
+      if (h.idn.look.tipsy && h.state !== 'stunned' && h.state !== 'sleep') h.rig.body.rotation.z = Math.sin(this.time * 2.3 + h.phase) * 0.08;
+      const walking = h.state === 'patrol' || h.state === 'search' || h.state === 'stinky' || h.state === 'flee' || (h.state === 'alert' && !h.canSee);
+      const s = walking && !h.stationary ? Math.sin(h.phase) * 0.6 : 0;
       h.rig.legs.forEach((l, i) => (l.rotation.x = i ? s : -s));
-      if (h.marker) h.marker.position.y = h.rig.height + 0.1 + Math.abs(Math.sin(this.time * 6)) * 0.2;
+      if (h.marker) h.marker.position.y = h.rig.height / h.rig.root.scale.x + 0.1 + Math.abs(Math.sin(this.time * 6)) * 0.2;
 
-      h.cone.visible = sniffing;
+      h.cone.visible = sniffing && !h.oblivious;
       h.sniffTag.visible = sniffing;
 
       // Deer passive: smell nearby hunters.
@@ -913,8 +1489,74 @@ export class Game {
         });
       }
     }
+    for (const t of this.traps) t.tag.visible = sniffing;
     this.hud.setStealth(maxSus);
     this.hud.setPings(pings);
+    const king = this.hunters.find((h) => h.kind === 'king');
+    if (king) this.hud.setBoss(king.hatsLeft, 3, king.vulnerableT > 0);
+  }
+
+  private afterStun(h: Hunter) {
+    const p = this.player;
+    if (h.kind === 'king') {
+      h.state = 'alert';
+      h.suspicion = 1;
+      h.lastSeen.copy(p.pos);
+      h.aim = -0.4;
+      return;
+    }
+    switch (h.idn.personality) {
+      case 'scaredy':
+        h.state = 'flee';
+        h.target = this.nearestTruck(h.pos);
+        h.quipT = 0;
+        this.opts.onEvent({ type: 'scared' });
+        break;
+      case 'grumpy':
+        h.state = 'alert';
+        h.suspicion = 1;
+        h.lostT = 0;
+        h.lastSeen.copy(p.pos);
+        h.aim = -0.7;
+        h.say(pick(['THAT\'S IT!', 'Oh, it is ON now.', 'You\'re going on the WALL, pal!']));
+        break;
+      default:
+        h.state = 'curious';
+        h.suspicion = 0.4;
+        h.lastSeen.copy(p.pos);
+        h.say(pick(['Who did that?!', 'Ow, my pride.', 'I\'m OK! I\'m OK!']));
+    }
+  }
+
+  private placeTrap(h: Hunter) {
+    const obj = buildTrap();
+    const pos = h.pos.clone().addScaledVector(h.forward, -1.2);
+    pos.y = this.world.height(pos.x, pos.z);
+    obj.position.copy(pos);
+    obj.rotation.y = Math.random() * 6;
+    this.world.scene.add(obj);
+    const tag = textSprite('TRAP', { bg: 'rgba(220,40,40,0.9)', fg: '#fff', size: 0.03 });
+    tag.material.sizeAttenuation = false;
+    tag.position.y = 1;
+    tag.visible = false;
+    obj.add(tag);
+    this.traps.push({ obj, pos, owner: h, sprung: 0, tag });
+    if (Math.random() < 0.4) h.say('Aaand... trap goes here. I\'ll remember that.');
+  }
+
+  /** Hunters blunder into each other's traps too. */
+  private updateTrapsForHunters() {
+    for (const t of this.traps) {
+      if (t.sprung > 0) continue;
+      for (const h of this.hunters) {
+        if (h === t.owner || h.oblivious || h.stationary || h.kind === 'king') continue;
+        if (Math.hypot(h.pos.x - t.pos.x, h.pos.z - t.pos.z) < 0.8) {
+          t.sprung = 0.01;
+          this.knockDown(h, 4, 'trap');
+          break;
+        }
+      }
+    }
   }
 
   private updateArrows(dt: number) {
@@ -1006,14 +1648,26 @@ export class Game {
     this.world.sun.intensity = 1.8 * (1 - k * 0.6);
   }
 
-  private finish(win: boolean, killer?: HunterDef) {
+  private finish(win: boolean, killer?: Hunter) {
     if (this.ended) return;
     this.ended = true;
     if (win) sfx.win();
     else sfx.lose();
+    haptic(win ? 'success' : 'heavy');
     this.input.reset();
     const stars = [win, win && this.hitsTaken === 0, win && this.time <= this.map.parTime];
-    setTimeout(() => this.onEnd({ win, time: this.time, hitsTaken: this.hitsTaken, stars, killer, booped: this.progress.boop }), win ? 600 : 1200);
+    const result: GameResult = {
+      win,
+      time: this.time,
+      hitsTaken: this.hitsTaken,
+      stars,
+      killer: killer?.name,
+      killerKind: killer?.kind,
+      hats: this.runHats,
+      secretDone: !!this.secret?.done,
+      kingDefeated: win && this.kingDefeated,
+    };
+    setTimeout(() => this.opts.onEnd(result), win ? 600 : 1200);
   }
 
   update(dt: number) {
@@ -1030,7 +1684,7 @@ export class Game {
     this.input.update();
     if (this.input.consume('Escape', 'KeyP')) {
       this.input.endFrame();
-      this.onPause();
+      this.opts.onPause();
       return;
     }
     if (!this.ended) {
@@ -1039,7 +1693,9 @@ export class Game {
       this.updatePlayer(dt);
       const sniffing = this.animal.id === 'deer' && this.player.abilityT > 0;
       this.updateHunters(dt, sniffing);
+      this.updateTrapsForHunters();
       this.updateArrows(dt);
+      this.updateSecret(dt);
       this.checkObjectives();
       this.updateSky();
       const p = this.player;
@@ -1048,7 +1704,8 @@ export class Game {
       this.hud.setTime(this.time);
       this.hud.setAbility(p.abilityCd / this.animal.ability.cooldown, p.abilityT > 0);
       this.hud.setFlying(p.flying);
-      this.hud.setBoop(this.hunters.some((h) => h.pos.distanceTo(p.pos) < 2.8 + p.radius && this.canBoop(h)));
+      const bt = this.boopTarget();
+      this.hud.setBoop(!!bt && (!!bt.prop || this.canBoop(bt.hunter!)));
     }
     this.updateFx(dt);
     this.updateCamera(dt);
@@ -1066,4 +1723,9 @@ export class Game {
       if (o instanceof THREE.Sprite) (o.material as THREE.SpriteMaterial).map?.dispose();
     });
   }
+}
+
+/** Used by the menus to list who can show up on a map. */
+export function hunterLineup(map: MapDef) {
+  return (Object.entries(map.hunters) as [HunterKind, number][]).map(([k, n]) => ({ def: HUNTERS[k], count: n }));
 }

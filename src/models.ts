@@ -1,6 +1,6 @@
 // Procedural low-poly models built from primitives, so the game ships with zero asset files.
 import * as THREE from 'three';
-import type { AnimalId, HunterKind, MapDef } from './data';
+import type { AnimalId, HunterKind, MapDef, SecretItem } from './data';
 
 const matCache = new Map<string, THREE.Material>();
 export function mat(color: number, opts: { emissive?: number; transparent?: boolean; opacity?: number } = {}) {
@@ -37,6 +37,8 @@ export interface Rig {
   legs: THREE.Object3D[];
   wings?: THREE.Object3D[];
   hat?: THREE.Object3D;
+  /** The Trophy King's stack of hats, top first. */
+  hats?: THREE.Object3D[];
   /** Height of the top of the model, for floating labels. */
   height: number;
 }
@@ -94,6 +96,7 @@ export function buildAnimal(id: AnimalId, color: number, accent: number, scale =
     rabbit: { bw: 0.5, bh: 0.5, bl: 0.7, legLen: 0.25, legT: 0.16, headR: 0.3, neck: 0.1 },
     skunk: { bw: 0.55, bh: 0.45, bl: 0.95, legLen: 0.25, legT: 0.14, headR: 0.26, neck: 0.05 },
     bear: { bw: 1.3, bh: 1.2, bl: 2.1, legLen: 0.8, legT: 0.38, headR: 0.55, neck: 0.15 },
+    moose: { bw: 1.1, bh: 1.15, bl: 2.1, legLen: 1.45, legT: 0.26, headR: 0.5, neck: 0.5 },
   };
   const d = dims[id];
   const bodyY = d.legLen + d.bh / 2;
@@ -156,6 +159,22 @@ export function buildAnimal(id: AnimalId, color: number, accent: number, scale =
   } else if (id === 'bear') {
     for (const s of [-1, 1]) head.add(mesh(sphere(0.16, 0), color, 0.38 * s, 0.42, -0.1));
     height = 3;
+  } else if (id === 'moose') {
+    // Big flat palmate antlers, a droopy nose and the beard-thing (it's called a bell).
+    for (const s of [-1, 1]) {
+      const a = new THREE.Group();
+      a.position.set(0.3 * s, 0.35, -0.1);
+      a.rotation.z = -0.5 * s;
+      a.add(mesh(cyl(0.06, 0.08, 0.5, 5), accent, 0, 0.25, 0));
+      const palm = mesh(box(0.9, 0.12, 0.6), accent, 0.35 * s, 0.55, 0);
+      palm.rotation.z = 0.3 * s;
+      a.add(palm);
+      for (let i = 0; i < 4; i++) a.add(mesh(cone(0.06, 0.3, 4), accent, (0.1 + i * 0.22) * s, 0.75 + i * 0.05, -0.2 + (i % 2) * 0.3));
+      head.add(a);
+    }
+    head.add(mesh(box(0.5, 0.45, 0.5), color, 0, -0.15, 0.6));
+    head.add(mesh(box(0.15, 0.45, 0.12), color, 0, -0.6, 0.1));
+    height = 3.8;
   }
 
   const lx = d.bw / 2 - d.legT / 2;
@@ -171,111 +190,419 @@ export function buildAnimal(id: AnimalId, color: number, accent: number, scale =
   return { root, body, legs, height: height * scale };
 }
 
-export function buildHunter(kind: HunterKind, vest: number): Rig {
+/** How an individual hunter looks. Rolled per hunter so no two are quite the same. */
+export interface HunterLook {
+  vest: number;
+  shirt: number;
+  pants: number;
+  skin: number;
+  beard: number | null;
+  hatColor: number;
+  /** Belly size multiplier. */
+  belly: number;
+  /** Overall height multiplier. */
+  height: number;
+  golden: boolean;
+  tipsy: boolean;
+}
+
+export const DEFAULT_LOOK: HunterLook = {
+  vest: 0xff6a00, shirt: 0x8b2e2e, pants: 0x6b5a45, skin: 0xf1c27d, beard: 0x6b4423, hatColor: 0xff6a00,
+  belly: 1, height: 1, golden: false, tipsy: false,
+};
+
+function cooler(x: number, y: number, z: number) {
+  const g = new THREE.Group();
+  g.position.set(x, y, z);
+  g.add(mesh(box(0.7, 0.45, 0.45), 0x1e88e5, 0, 0.22, 0));
+  g.add(mesh(box(0.72, 0.1, 0.47), 0xffffff, 0, 0.5, 0));
+  g.add(mesh(box(0.3, 0.05, 0.05), 0xffffff, 0, 0.6, 0));
+  return g;
+}
+
+function beerCan() {
+  const g = new THREE.Group();
+  g.add(mesh(cyl(0.06, 0.06, 0.18, 8), 0xc0c0c0, 0, 0, 0, false));
+  g.add(mesh(cyl(0.061, 0.061, 0.08, 8), 0x1565c0, 0, 0, 0, false));
+  return g;
+}
+
+export function buildHunter(kind: HunterKind, look: HunterLook = DEFAULT_LOOK): Rig {
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
   const legs: THREE.Object3D[] = [];
+  const vest = look.golden ? 0xd4af37 : look.vest;
 
   if (kind === 'ghillie') {
     // A bush. With eyes. And a rifle.
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2;
       const r = i === 0 ? 0 : 0.6;
-      body.add(mesh(sphere(0.65 + (i % 3) * 0.12, 0), i % 2 ? 0x3f6b2a : 0x4b7d31, Math.cos(a) * r, 0.7 + (i % 3) * 0.2, Math.sin(a) * r));
+      const c = look.golden ? (i % 2 ? 0xb8962e : 0xd4af37) : i % 2 ? 0x3f6b2a : 0x4b7d31;
+      body.add(mesh(sphere(0.65 + (i % 3) * 0.12, 0), c, Math.cos(a) * r, 0.7 + (i % 3) * 0.2, Math.sin(a) * r));
     }
     eyes(body, 0.2, 1.25, 0.75, 0.09);
-    const gun = mesh(box(0.08, 0.08, 1.8), 0x222222, 0.2, 1.0, 1.2);
-    body.add(gun);
-    const hat = mesh(sphere(0.35, 0), 0x2d5a1e, 0, 1.75, 0);
+    body.add(mesh(box(0.08, 0.08, 1.8), 0x222222, 0.2, 1.0, 1.2));
+    const hat = mesh(sphere(0.35, 0), look.golden ? 0xd4af37 : 0x2d5a1e, 0, 1.75, 0);
     body.add(hat);
     return { root, body, legs, hat, height: 2.4 };
   }
 
-  const skin = 0xf1c27d;
-  const pants = kind === 'bow' ? 0x5b6b3a : 0x6b5a45;
+  const isKing = kind === 'king';
+  const seated = kind === 'drone';
+  const hipY = kind === 'ebike' ? 1.15 : seated ? 0.55 : 0.95;
+  const torsoW = 0.62 + 0.12 * look.belly;
 
   if (kind === 'ebike') {
     const bike = new THREE.Group();
     bike.add(mesh(cyl(0.45, 0.45, 0.12, 12).rotateZ(Math.PI / 2), 0x222222, 0, 0.45, 0.8));
     bike.add(mesh(cyl(0.45, 0.45, 0.12, 12).rotateZ(Math.PI / 2), 0x222222, 0, 0.45, -0.8));
-    bike.add(mesh(box(0.15, 0.15, 1.5), 0x22d3ee, 0, 0.8, 0));
-    bike.add(mesh(box(0.3, 0.35, 0.5), 0x333333, 0, 0.7, 0)); // battery
+    bike.add(mesh(box(0.15, 0.15, 1.5), vest, 0, 0.8, 0));
+    bike.add(mesh(box(0.3, 0.35, 0.5), 0x333333, 0, 0.7, 0));
     bike.add(mesh(box(0.7, 0.06, 0.06), 0x888888, 0, 1.4, 0.7));
     bike.add(mesh(box(0.1, 0.6, 0.1), 0x888888, 0, 1.1, 0.7));
     body.add(bike);
-    body.position.y = 0;
+  }
+  if (seated) {
+    // Lawn chair
+    body.add(mesh(box(0.9, 0.08, 0.8), 0x2e7d32, 0, 0.5, 0));
+    body.add(mesh(box(0.9, 0.9, 0.08), 0x2e7d32, 0, 0.9, -0.4));
+    for (const [x, z] of [[-0.4, -0.35], [0.4, -0.35], [-0.4, 0.35], [0.4, 0.35]]) body.add(mesh(box(0.05, 0.5, 0.05), 0xaaaaaa, x, 0.25, z));
   }
 
-  const hipY = kind === 'ebike' ? 1.15 : 0.95;
-  if (kind !== 'ebike') {
+  if (kind === 'ebike' || seated) {
     for (const s of [-1, 1]) {
-      const l = leg(0.95, 0.24, pants, 0x3b2a1a);
+      const l = leg(0.6, 0.22, look.pants, 0x3b2a1a);
+      l.position.set(0.16 * s, hipY, 0.1);
+      l.rotation.x = -1.2;
+      body.add(l);
+    }
+  } else {
+    for (const s of [-1, 1]) {
+      const l = leg(0.95, 0.24, look.pants, 0x3b2a1a);
       l.position.set(0.16 * s, hipY, 0);
       body.add(l);
       legs.push(l);
     }
-  } else {
-    for (const s of [-1, 1]) {
-      const l = leg(0.6, 0.22, pants, 0x3b2a1a);
-      l.position.set(0.16 * s, hipY, 0.1);
-      l.rotation.x = -1.0;
-      body.add(l);
-    }
   }
-  // Torso (blaze-orange vest over a plaid-ish shirt)
-  body.add(mesh(box(0.7, 0.85, 0.45), vest, 0, hipY + 0.45, 0));
-  body.add(mesh(box(0.5, 0.25, 0.4), 0x8b2e2e, 0, hipY + 0.95, 0));
-  // Belly. Every hunter has the belly.
-  body.add(mesh(sphere(0.3, 0), vest, 0, hipY + 0.3, 0.2));
-  // Head
+  // Torso: shirt, vest panels, and the belly. Every hunter has the belly.
+  body.add(mesh(box(torsoW, 0.85, 0.45), look.shirt, 0, hipY + 0.45, 0));
+  body.add(mesh(box(torsoW + 0.04, 0.8, 0.2), vest, 0, hipY + 0.47, 0.14));
+  body.add(mesh(box(torsoW + 0.04, 0.8, 0.12), vest, 0, hipY + 0.47, -0.18));
+  body.add(mesh(sphere(0.22 + 0.12 * look.belly, 0), vest, 0, hipY + 0.3, 0.12 + 0.08 * look.belly));
+  if (isKing) {
+    // Cape and a very large belt buckle.
+    const cape = mesh(box(torsoW + 0.3, 1.5, 0.06), 0x6a1b9a, 0, hipY + 0.2, -0.32);
+    cape.rotation.x = 0.12;
+    body.add(cape);
+    body.add(mesh(box(0.3, 0.2, 0.05), 0xffe082, 0, hipY + 0.05, 0.38));
+  }
+
   const head = new THREE.Group();
   head.position.set(0, hipY + 1.2, 0);
   body.add(head);
-  head.add(mesh(box(0.42, 0.45, 0.42), skin, 0, 0, 0));
-  head.add(mesh(box(0.44, 0.18, 0.12), 0x6b4423, 0, -0.17, 0.18)); // beard
-  head.add(mesh(sphere(0.06, 0), 0xe0a060, 0, 0, 0.24, false)); // nose
+  head.add(mesh(box(0.42, 0.45, 0.42), look.skin, 0, 0, 0));
+  if (look.beard !== null) head.add(mesh(box(0.44, 0.2, 0.14), look.beard, 0, -0.17, 0.18));
+  else head.add(mesh(box(0.2, 0.05, 0.05), 0xb05050, 0, -0.12, 0.22, false));
+  head.add(mesh(sphere(0.06, 0), look.tipsy ? 0xe57373 : 0xe0a060, 0, 0, 0.24, false));
   eyes(head, 0.1, 0.07, 0.2, 0.055);
-  // Hat
+
+  // Hats. The king wears a stack of them, one per boop he can take.
+  const hats: THREE.Object3D[] = [];
   const hat = new THREE.Group();
   hat.position.set(0, 0.25, 0);
+  const hc = look.golden ? 0xd4af37 : look.hatColor;
   if (kind === 'bow') {
-    hat.add(mesh(cyl(0.24, 0.26, 0.2, 8), 0x4d5a2e, 0, 0.1, 0));
-    hat.add(mesh(cyl(0.4, 0.4, 0.04, 8), 0x4d5a2e, 0, 0.02, 0));
+    hat.add(mesh(cyl(0.24, 0.26, 0.2, 8), hc, 0, 0.1, 0));
+    hat.add(mesh(cyl(0.4, 0.4, 0.04, 8), hc, 0, 0.02, 0));
   } else if (kind === 'ebike') {
-    hat.add(mesh(sphere(0.28, 1), 0x22d3ee, 0, 0.05, 0)); // helmet
+    hat.add(mesh(sphere(0.28, 1), hc, 0, 0.05, 0));
+  } else if (kind === 'trapper') {
+    hat.add(mesh(cyl(0.25, 0.26, 0.28, 8), 0x8d6e63, 0, 0.12, 0));
+    const tail = mesh(box(0.1, 0.1, 0.55), 0x5d4037, 0, 0.05, -0.4);
+    tail.add(mesh(box(0.11, 0.11, 0.1), 0x212121, 0, 0, -0.15, false));
+    hat.add(tail);
+  } else if (kind === 'drone') {
+    hat.add(mesh(box(0.46, 0.18, 0.46), hc, 0, 0.08, 0));
+    hat.add(mesh(box(0.46, 0.04, 0.25), hc, 0, 0.0, -0.3));
+    hat.add(mesh(box(0.06, 0.25, 0.06), 0x222222, 0.25, -0.15, 0));
+    hat.add(mesh(box(0.06, 0.25, 0.06), 0x222222, -0.25, -0.15, 0));
+  } else if (isKing) {
+    // Cowboy hat, top hat, then crown on top.
+    const cowboy = new THREE.Group();
+    cowboy.add(mesh(cyl(0.6, 0.6, 0.05, 10), 0x6d4c41, 0, 0, 0));
+    cowboy.add(mesh(cyl(0.25, 0.28, 0.25, 8), 0x6d4c41, 0, 0.13, 0));
+    const top = new THREE.Group();
+    top.position.y = 0.27;
+    top.add(mesh(cyl(0.38, 0.38, 0.04, 10), 0x212121, 0, 0, 0));
+    top.add(mesh(cyl(0.24, 0.24, 0.45, 10), 0x212121, 0, 0.23, 0));
+    const crown = new THREE.Group();
+    crown.position.y = 0.73;
+    crown.add(mesh(cyl(0.24, 0.22, 0.2, 8), 0xffd54f, 0, 0.1, 0));
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      crown.add(mesh(cone(0.06, 0.18, 4), 0xffd54f, Math.cos(a) * 0.2, 0.28, Math.sin(a) * 0.2));
+    }
+    crown.add(mesh(sphere(0.05, 0), 0xe53935, 0, 0.12, 0.23, false));
+    hat.add(cowboy, top, crown);
+    hats.push(crown, top, cowboy);
   } else {
-    hat.add(mesh(box(0.46, 0.2, 0.46), vest, 0, 0.08, 0));
-    hat.add(mesh(box(0.46, 0.04, 0.25), vest, 0, 0.0, 0.3)); // bill
-    hat.add(mesh(box(0.06, 0.18, 0.2), 0x6b4423, 0.25, -0.05, 0)); // ear flap
+    hat.add(mesh(box(0.46, 0.2, 0.46), hc, 0, 0.08, 0));
+    hat.add(mesh(box(0.46, 0.04, 0.25), hc, 0, 0.0, 0.3));
+    hat.add(mesh(box(0.06, 0.18, 0.2), 0x6b4423, 0.25, -0.05, 0));
     hat.add(mesh(box(0.06, 0.18, 0.2), 0x6b4423, -0.25, -0.05, 0));
   }
   head.add(hat);
 
-  // Arms + weapon
   const arms = new THREE.Group();
   arms.position.set(0, hipY + 0.8, 0);
   body.add(arms);
-  for (const s of [-1, 1]) {
-    const a = mesh(box(0.18, 0.18, 0.6), vest, 0.38 * s, 0, 0.25);
-    arms.add(a);
-  }
-  if (kind === 'bow') {
-    const bow = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.035, 4, 10, Math.PI), mat(0x7a4a22));
-    bow.rotation.z = Math.PI / 2;
-    bow.position.set(0, 0, 0.65);
-    arms.add(bow);
-    arms.add(mesh(box(0.01, 1.1, 0.01), 0xffffff, 0, 0, 0.65, false));
-  } else if (kind === 'rifle' || kind === 'shotgun') {
-    arms.add(mesh(box(0.1, 0.12, kind === 'rifle' ? 1.3 : 1.0), 0x3a2a1a, 0, 0.05, 0.6));
-    arms.add(mesh(cyl(0.035, 0.035, 0.7, 5).rotateX(Math.PI / 2), 0x222222, 0, 0.1, kind === 'rifle' ? 1.3 : 1.1));
-    if (kind === 'rifle') arms.add(mesh(cyl(0.05, 0.05, 0.3, 6).rotateX(Math.PI / 2), 0x111111, 0, 0.2, 0.6));
-    if (kind === 'shotgun') arms.add(mesh(cyl(0.035, 0.035, 0.7, 5).rotateX(Math.PI / 2), 0x222222, 0.07, 0.1, 1.1));
+  for (const s of [-1, 1]) arms.add(mesh(box(0.18, 0.18, 0.6), look.shirt, (torsoW / 2 + 0.07) * s, 0, 0.25));
+  if (kind === 'bow' || kind === 'trapper') {
+    if (kind === 'bow') {
+      const bow = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.035, 4, 10, Math.PI), mat(0x7a4a22));
+      bow.rotation.z = Math.PI / 2;
+      bow.position.set(0, 0, 0.65);
+      arms.add(bow);
+      arms.add(mesh(box(0.01, 1.1, 0.01), 0xffffff, 0, 0, 0.65, false));
+    } else {
+      arms.add(mesh(box(0.1, 0.1, 0.8), 0x5d4037, 0, 0.05, 0.6));
+      arms.add(mesh(box(0.8, 0.06, 0.08), 0x3e2723, 0, 0.08, 0.9));
+      // A spare trap on her back.
+      body.add(mesh(cyl(0.3, 0.3, 0.08, 10).rotateX(Math.PI / 2), 0x757575, 0, hipY + 0.6, -0.32));
+    }
+  } else if (kind === 'rifle' || kind === 'shotgun' || kind === 'hound' || kind === 'drunk' || isKing) {
+    const long = kind === 'rifle' || kind === 'hound' || kind === 'drunk';
+    const metal = isKing ? 0xd4af37 : 0x222222;
+    arms.add(mesh(box(0.1, 0.12, long ? 1.3 : 1.0), isKing ? 0x6d4c41 : 0x3a2a1a, 0, 0.05, 0.6));
+    arms.add(mesh(cyl(0.035, 0.035, 0.7, 5).rotateX(Math.PI / 2), metal, 0, 0.1, long ? 1.3 : 1.1));
+    if (long) arms.add(mesh(cyl(0.05, 0.05, 0.3, 6).rotateX(Math.PI / 2), 0x111111, 0, 0.2, 0.6));
+    else arms.add(mesh(cyl(0.035, 0.035, 0.7, 5).rotateX(Math.PI / 2), metal, 0.07, 0.1, 1.1));
   } else if (kind === 'ebike') {
     arms.position.set(0, hipY + 0.6, 0.2);
     arms.rotation.x = 0.4;
+  } else if (seated) {
+    arms.position.set(0, hipY + 0.6, 0.1);
+    arms.add(mesh(box(0.5, 0.08, 0.3), 0x37474f, 0, 0, 0.55));
+    arms.add(mesh(box(0.04, 0.2, 0.04), 0x37474f, 0.15, 0.12, 0.55));
   }
-  return { root, body, legs, hat, height: hipY + 2 };
+  if (kind === 'drunk') body.add(cooler(torsoW / 2 + 0.3, hipY - 0.25, 0.1));
+  if (look.tipsy || kind === 'drunk') {
+    const can = beerCan();
+    can.position.set(-(torsoW / 2 + 0.07), 0.05, 0.55);
+    arms.add(can);
+  }
+
+  const scale = (isKing ? 1.45 : 1) * look.height;
+  root.scale.setScalar(scale);
+  return { root, body, legs, hat, hats: hats.length ? hats : undefined, height: (hipY + 2) * scale };
+}
+
+export function buildDog(): Rig {
+  // A beagle: floppy ears, white tail tip, very serious nose.
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  const legs: THREE.Object3D[] = [];
+  body.add(mesh(box(0.45, 0.4, 0.95), 0xc68642, 0, 0.6, 0));
+  body.add(mesh(box(0.46, 0.3, 0.4), 0x3e2723, 0, 0.7, -0.1));
+  const head = new THREE.Group();
+  head.position.set(0, 0.85, 0.55);
+  head.add(mesh(box(0.35, 0.35, 0.4), 0xc68642, 0, 0, 0));
+  head.add(mesh(box(0.22, 0.2, 0.25), 0xffffff, 0, -0.08, 0.25));
+  head.add(mesh(sphere(0.06, 0), 0x111111, 0, -0.02, 0.38, false));
+  for (const s of [-1, 1]) head.add(mesh(box(0.08, 0.35, 0.2), 0x6d4c41, 0.21 * s, -0.08, -0.02));
+  eyes(head, 0.09, 0.08, 0.18, 0.05);
+  body.add(head);
+  const tail = mesh(box(0.06, 0.4, 0.06), 0xffffff, 0, 0.9, -0.5);
+  tail.rotation.x = -0.5;
+  body.add(tail);
+  for (const [x, z] of [[-0.15, 0.35], [0.15, 0.35], [-0.15, -0.35], [0.15, -0.35]]) {
+    const l = leg(0.4, 0.12, 0xc68642, 0xffffff);
+    l.position.set(x, 0.42, z);
+    body.add(l);
+    legs.push(l);
+  }
+  return { root, body, legs, height: 1.2 };
+}
+
+export function buildDrone(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(box(0.6, 0.18, 0.6), 0x37474f, 0, 0, 0));
+  g.add(mesh(sphere(0.12, 0), 0x111111, 0, -0.12, 0.25, false));
+  for (const [x, z] of [[-0.45, -0.45], [0.45, -0.45], [-0.45, 0.45], [0.45, 0.45]]) {
+    g.add(mesh(box(0.4, 0.04, 0.06), 0x263238, x / 2, 0, z / 2, false));
+    const rotor = mesh(cyl(0.22, 0.22, 0.02, 8), 0x90a4ae, x, 0.08, z, false);
+    rotor.name = 'rotor';
+    g.add(rotor);
+  }
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 4), new THREE.MeshBasicMaterial({ color: 0xff1744 }));
+  led.position.set(0, 0.12, 0);
+  g.add(led);
+  return g;
+}
+
+export function buildTrap(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(cyl(0.45, 0.45, 0.05, 10), 0x5d5d5d, 0, 0.03, 0, false));
+  for (const s of [-1, 1]) {
+    const jaw = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.04, 3, 10, Math.PI), mat(0x7a7a7a));
+    jaw.rotation.x = -Math.PI / 2 + s * 0.5;
+    jaw.position.y = 0.08;
+    g.add(jaw);
+  }
+  g.add(mesh(box(0.2, 0.03, 0.2), 0xb0a080, 0, 0.07, 0, false));
+  return g;
+}
+
+/** Props and pickups for the hidden campaign. */
+export function buildSecretItem(item: SecretItem): THREE.Group {
+  const g = new THREE.Group();
+  const glow = (c: number) => new THREE.MeshLambertMaterial({ color: c, emissive: c, emissiveIntensity: 0.45, flatShading: true });
+  const add = (geo: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0) => {
+    const o = new THREE.Mesh(geo, m);
+    o.position.set(x, y, z);
+    o.castShadow = true;
+    g.add(o);
+    return o;
+  };
+  switch (item) {
+    case 'pear':
+      add(sphere(0.32, 1), glow(0xffd54f), 0, 0, 0);
+      add(sphere(0.22, 1), glow(0xffd54f), 0, 0.3, 0);
+      add(box(0.05, 0.2, 0.05), mat(0x5b3a1a), 0, 0.55, 0);
+      break;
+    case 'flyer': {
+      add(box(0.15, 2, 0.15), mat(0x6b5a45), 0, 1, 0);
+      const paper = add(box(1.1, 1.4, 0.04), glow(0xfff8e1), 0, 1.6, 0.1);
+      paper.rotation.z = 0.05;
+      add(box(0.9, 0.18, 0.05), mat(0xd4af37), 0, 2.05, 0.12);
+      add(box(0.6, 0.5, 0.05), mat(0x8d6e63), 0, 1.5, 0.12);
+      break;
+    }
+    case 'radio':
+      add(box(0.3, 0.55, 0.15), glow(0xffb300), 0, 0.3, 0);
+      add(box(0.04, 0.35, 0.04), mat(0x222222), 0.1, 0.72, 0);
+      add(box(0.2, 0.15, 0.02), mat(0x263238), 0, 0.35, 0.08);
+      break;
+    case 'battery':
+      add(cyl(0.12, 0.12, 0.45, 8), glow(0x43a047), 0, 0.25, 0);
+      add(cyl(0.05, 0.05, 0.06, 6), mat(0xcccccc), 0, 0.5, 0);
+      break;
+    case 'charger':
+      add(box(1.4, 1.6, 0.8), mat(0x37474f), 0, 0.8, 0);
+      add(box(0.6, 0.6, 0.05), glow(0x22d3ee), 0, 1.1, 0.42);
+      add(box(0.2, 0.4, 0.05), mat(0xffeb3b), 0, 1.1, 0.45);
+      add(box(0.1, 0.1, 3), mat(0x111111), 0.4, 0.05, 1.8);
+      add(box(0.4, 0.3, 0.3), glow(0xff1744), 0.4, 0.2, 3.3);
+      break;
+    case 'key':
+      add(new THREE.TorusGeometry(0.18, 0.05, 4, 10), glow(0xffb74d), 0, 0.45, 0);
+      add(box(0.06, 0.45, 0.06), glow(0xffb74d), 0, 0.1, 0);
+      add(box(0.15, 0.06, 0.06), glow(0xffb74d), 0.07, -0.05, 0);
+      break;
+    case 'cage': {
+      add(box(1.8, 0.1, 1.8), mat(0x5d4037), 0, 0.05, 0);
+      add(box(1.8, 0.1, 1.8), mat(0x5d4037), 0, 1.75, 0);
+      for (let i = 0; i < 6; i++) {
+        for (const s of [-1, 1]) {
+          add(cyl(0.03, 0.03, 1.7, 4), mat(0x9e9e9e), -0.75 + i * 0.3, 0.9, 0.85 * s);
+          add(cyl(0.03, 0.03, 1.7, 4), mat(0x9e9e9e), 0.85 * s, 0.9, -0.75 + i * 0.3);
+        }
+      }
+      const critter = new THREE.Group();
+      critter.name = 'critter';
+      const parrot = Math.random() < 0.5;
+      critter.add(new THREE.Mesh(sphere(0.3, 1), mat(parrot ? 0xe53935 : 0x795548)));
+      const h = new THREE.Mesh(sphere(0.22, 1), mat(parrot ? 0x43a047 : 0xa1887f));
+      h.position.set(0, 0.4, 0.1);
+      critter.add(h);
+      critter.position.y = 0.5;
+      g.add(critter);
+      add(box(0.3, 0.3, 0.1), glow(0xffb74d), 0, 0.9, 0.92);
+      break;
+    }
+    case 'feather':
+      add(box(0.12, 0.8, 0.03), glow(0xb0bec5), 0, 0.4, 0).rotation.z = 0.3;
+      break;
+    case 'decoy': {
+      add(sphere(0.45, 1), mat(0x6d4c41), 0, 0.35, 0).scale.set(1, 0.7, 1.4);
+      add(sphere(0.25, 1), mat(0x2e7d32), 0, 0.7, 0.4);
+      add(box(0.2, 0.06, 0.2), mat(0xf2c94c), 0, 0.68, 0.65);
+      add(box(0.03, 0.5, 0.03), mat(0x222222), 0, 1.0, -0.2);
+      const led = add(sphere(0.06, 0), new THREE.MeshBasicMaterial({ color: 0xff1744 }), 0, 1.27, -0.2);
+      led.name = 'led';
+      break;
+    }
+    case 'lodgemap':
+      add(cyl(0.12, 0.12, 0.8, 8).rotateZ(Math.PI / 2), glow(0xfff3c4), 0, 0.3, 0);
+      add(box(0.06, 0.06, 0.06), mat(0xc62828), 0, 0.3, 0.12);
+      break;
+  }
+  return g;
+}
+
+export function buildHatPickup(color = 0xff6a00, golden = false): THREE.Group {
+  const g = new THREE.Group();
+  const c = golden ? 0xd4af37 : color;
+  g.add(mesh(box(0.5, 0.22, 0.5), c, 0, 0, 0));
+  g.add(mesh(box(0.5, 0.04, 0.28), c, 0, -0.08, 0.32));
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.7, 0.05, 4, 20).rotateX(Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: golden ? 0xffd54f : 0xffffff, transparent: true, opacity: 0.7 }),
+  );
+  ring.position.y = -0.3;
+  g.add(ring);
+  return g;
+}
+
+/** The Trophy King's lodge: a log cabin with a big antler sign. Returns the group and its collision footprint. */
+export function buildLodge(): THREE.Group {
+  const g = new THREE.Group();
+  const W = 22;
+  const D = 12;
+  for (let i = 0; i < 9; i++) {
+    g.add(mesh(cyl(0.45, 0.45, W, 8).rotateZ(Math.PI / 2), i % 2 ? 0x8d6e63 : 0x795548, 0, 0.45 + i * 0.85, D / 2));
+    g.add(mesh(cyl(0.45, 0.45, W, 8).rotateZ(Math.PI / 2), i % 2 ? 0x8d6e63 : 0x795548, 0, 0.45 + i * 0.85, -D / 2));
+    g.add(mesh(cyl(0.45, 0.45, D, 8).rotateX(Math.PI / 2), i % 2 ? 0x795548 : 0x8d6e63, W / 2, 0.45 + i * 0.85, 0));
+    g.add(mesh(cyl(0.45, 0.45, D, 8).rotateX(Math.PI / 2), i % 2 ? 0x795548 : 0x8d6e63, -W / 2, 0.45 + i * 0.85, 0));
+  }
+  for (const s of [-1, 1]) {
+    const roof = mesh(box(W + 2, 0.4, D / 2 + 2.5), 0x4e342e, 0, 9.3, (s * D) / 4);
+    roof.rotation.x = s * 0.55;
+    g.add(roof);
+  }
+  // Glowing windows
+  const win = new THREE.MeshBasicMaterial({ color: 0xffd180 });
+  for (const x of [-7, -3, 3, 7]) {
+    const w = new THREE.Mesh(box(2, 1.6, 0.2), win);
+    w.position.set(x, 4, D / 2 + 0.45);
+    g.add(w);
+  }
+  const door = new THREE.Mesh(box(2.4, 3.6, 0.2), new THREE.MeshBasicMaterial({ color: 0xffb74d }));
+  door.position.set(0, 1.8, D / 2 + 0.45);
+  g.add(door);
+  // Sign with antlers
+  g.add(mesh(box(10, 1.6, 0.3), 0x3e2723, 0, 9.8, D / 2 + 1.6));
+  g.add(new THREE.Mesh(box(9, 1, 0.1), new THREE.MeshBasicMaterial({ color: 0xffd54f })).translateY(9.8).translateZ(D / 2 + 1.8));
+  for (const s of [-1, 1]) {
+    const a = mesh(box(0.25, 2.2, 0.25), 0xe8d8b0, 6 * s, 10.8, D / 2 + 1.6);
+    a.rotation.z = -0.5 * s;
+    g.add(a);
+  }
+  g.userData.footprint = { w: W + 1, d: D + 1 };
+  return g;
+}
+
+export function buildLantern(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(box(0.15, 3, 0.15), 0x3e2723, 0, 1.5, 0));
+  const l = new THREE.Mesh(box(0.45, 0.6, 0.45), new THREE.MeshBasicMaterial({ color: 0xffcc80 }));
+  l.position.y = 3.2;
+  g.add(l);
+  g.userData.radius = 0.3;
+  return g;
 }
 
 export function buildTree(style: MapDef['treeStyle'], rng: () => number): THREE.Group {
@@ -350,24 +677,6 @@ export function buildFood(color: number): THREE.Group {
   g.add(mesh(sphere(0.35, 1), color, 0, 0, 0));
   g.add(mesh(box(0.05, 0.2, 0.05), 0x5b3a1a, 0, 0.38, 0));
   g.add(mesh(box(0.18, 0.04, 0.1), 0x3fa34d, 0.1, 0.42, 0));
-  return g;
-}
-
-export function buildHatPickup(): THREE.Group {
-  const g = new THREE.Group();
-  g.add(mesh(box(0.5, 0.22, 0.5), 0xff6a00, 0, 0, 0));
-  g.add(mesh(box(0.5, 0.04, 0.28), 0xff6a00, 0, -0.08, 0.32));
-  return g;
-}
-
-export function buildFence(len: number): THREE.Group {
-  const g = new THREE.Group();
-  const posts = Math.floor(len / 4);
-  for (let i = 0; i <= posts; i++) {
-    g.add(mesh(box(0.25, 1.6, 0.25), 0x7a5a3a, -len / 2 + i * 4, 0.8, 0, false));
-  }
-  g.add(mesh(box(len, 0.15, 0.1), 0x8a6a4a, 0, 1.2, 0, false));
-  g.add(mesh(box(len, 0.15, 0.1), 0x8a6a4a, 0, 0.6, 0, false));
   return g;
 }
 

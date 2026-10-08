@@ -36,6 +36,13 @@ export class Hud {
   private hint: HTMLDivElement;
   private lastHearts = '';
   private lastObj = '';
+  private lastSecret = '';
+  private lastBoss = '';
+  private secretEl: HTMLDivElement;
+  private bossEl: HTMLDivElement;
+  private bannerEl: HTMLDivElement;
+  private bannerQueue: { title: string; desc: string }[] = [];
+  private bannerBusy = false;
 
   constructor(
     parent: HTMLElement,
@@ -50,7 +57,10 @@ export class Hud {
         <div class="hearts"></div>
         <div class="stamina"><div class="stamina-fill"></div></div>
         <div class="objectives"></div>
+        <div class="secret-obj"></div>
       </div>
+      <div class="boss-bar"><div class="boss-name">THE TROPHY KING</div><div class="boss-hats"></div><div class="boss-tip"></div></div>
+      <div class="banner"></div>
       <div class="hud-tr">
         <div class="timer">0:00</div>
         <button class="pause-btn" aria-label="Pause">II</button>
@@ -83,6 +93,9 @@ export class Hud {
     this.pings = q('.pings');
     this.flash = q('.flash');
     this.hint = q('.hint');
+    this.secretEl = q('.secret-obj');
+    this.bossEl = q('.boss-bar');
+    this.bannerEl = q('.banner');
 
     const bind = (el: HTMLElement, fn: () => void) => {
       el.addEventListener('touchstart', (e) => {
@@ -126,12 +139,57 @@ export class Hud {
     const html = list
       .map((o) => {
         const prog = o.isTime ? `${Math.min(o.have, o.need)}s / ${o.need}s` : o.need > 1 ? `${Math.min(o.have, o.need)}/${o.need}` : '';
-        return `<div class="obj ${o.done ? 'done' : ''} ${o.locked ? 'locked' : ''}">${o.done ? '✔' : o.locked ? '🔒' : '○'} ${o.label} <b>${prog}</b></div>`;
+        return `<div class="obj ${o.done ? 'done' : ''} ${o.locked ? 'locked' : ''}"><i class="tick"></i>${o.label} <b>${prog}</b></div>`;
       })
       .join('');
     if (html === this.lastObj) return;
     this.lastObj = html;
     this.objectives.innerHTML = html;
+  }
+
+  /** The hidden objective, shown under the regular ones once found. */
+  setSecret(v: { label: string; have: number; need: number } | null) {
+    const html = v ? `<div class="obj secret ${v.have >= v.need ? 'done' : ''}"><i class="tick"></i>${v.label} <b>${v.need > 1 ? `${Math.min(v.have, v.need)}/${v.need}` : ''}</b></div>` : '';
+    if (html === this.lastSecret) return;
+    this.lastSecret = html;
+    this.secretEl.innerHTML = html;
+  }
+
+  setBoss(hatsLeft: number, total: number, vulnerable: boolean) {
+    const key = `${hatsLeft}/${total}/${vulnerable}`;
+    if (key === this.lastBoss) return;
+    this.lastBoss = key;
+    this.bossEl.classList.add('on');
+    this.bossEl.classList.toggle('vuln', vulnerable);
+    this.bossEl.querySelector('.boss-hats')!.innerHTML = Array.from({ length: total }, (_, i) => `<span class="bhat ${i < hatsLeft ? '' : 'gone'}"></span>`).join('');
+    this.bossEl.querySelector('.boss-tip')!.textContent =
+      hatsLeft <= 0 ? 'Dethroned!' : vulnerable ? 'Reloading! BOOP HIM NOW!' : 'Dodge his shot, then boop him while he reloads';
+  }
+
+  /** Achievement-style banner that slides in at the top. Queued so they never overlap. */
+  banner(title: string, desc: string) {
+    this.bannerQueue.push({ title, desc });
+    if (!this.bannerBusy) this.nextBanner();
+  }
+
+  private nextBanner() {
+    const b = this.bannerQueue.shift();
+    if (!b) {
+      this.bannerBusy = false;
+      return;
+    }
+    this.bannerBusy = true;
+    const el = this.bannerEl;
+    el.innerHTML = `<div class="banner-k">Achievement</div><div class="banner-t"></div><div class="banner-d"></div>`;
+    el.querySelector('.banner-t')!.textContent = b.title;
+    el.querySelector('.banner-d')!.textContent = b.desc;
+    el.classList.remove('on');
+    void el.offsetWidth;
+    el.classList.add('on');
+    setTimeout(() => {
+      el.classList.remove('on');
+      setTimeout(() => this.nextBanner(), 400);
+    }, 3000);
   }
 
   setTime(t: number) {
@@ -194,13 +252,14 @@ export class Hud {
     });
   }
 
-  toast(text: string, kind: 'good' | 'bad' | 'info' = 'info') {
+  toast(text: string, kind: 'good' | 'bad' | 'info' | 'secret' = 'info') {
     const el = document.createElement('div');
     el.className = `toast ${kind}`;
     el.textContent = text;
     this.toasts.appendChild(el);
-    setTimeout(() => el.classList.add('out'), 2200);
-    setTimeout(() => el.remove(), 2800);
+    const life = kind === 'secret' ? 4200 : 2200;
+    setTimeout(() => el.classList.add('out'), life);
+    setTimeout(() => el.remove(), life + 600);
     while (this.toasts.children.length > 3) this.toasts.firstElementChild?.remove();
   }
 

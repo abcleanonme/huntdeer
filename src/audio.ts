@@ -106,6 +106,12 @@ export const sfx = {
     tone(520, 0.12, 'sawtooth', 0.2, 380);
     tone(520, 0.14, 'sawtooth', 0.2, 360, 0.18);
   },
+  bark: (vol = 1) => {
+    tone(420, 0.09, 'sawtooth', 0.25 * vol, 260);
+    tone(400, 0.11, 'sawtooth', 0.25 * vol, 230, 0.16);
+  },
+  secret: () => [392, 494, 587, 784].forEach((f, i) => tone(f, 0.3, 'sine', 0.2, undefined, i * 0.09)),
+  achievement: () => [784, 988, 1175].forEach((f, i) => tone(f, 0.2, 'triangle', 0.2, undefined, i * 0.08)),
   hum: (vol = 1) => tone(140, 0.2, 'sawtooth', 0.05 * vol, 160),
   win: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.25, 'triangle', 0.25, undefined, i * 0.12)),
   lose: () => [392, 330, 262, 196].forEach((f, i) => tone(f, 0.35, 'sawtooth', 0.15, undefined, i * 0.22)),
