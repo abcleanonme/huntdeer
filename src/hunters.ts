@@ -107,6 +107,8 @@ export interface Drone {
 }
 
 export class Hunter {
+  /** What the hunters call the player's critter; fills `{c}` in their lines. */
+  static critter = 'deer';
   def: HunterDef;
   rig: Rig;
   pos: THREE.Vector3;
@@ -142,6 +144,11 @@ export class Hunter {
   spotQuipCd = 0;
   /** Seconds during which this hunter ignores the player (e.g. e-bike recharging after a ram). */
   ignoreT = 0;
+  /** E-bike charge: revs up for `windT`, then rides a straight line to `chargeTo` without steering. */
+  chargeTo: THREE.Vector3 | null = null;
+  chargeEnd = 0;
+  chargeHit = false;
+  windT = 0;
   /** E-bike with its charger unplugged. */
   unplugged = false;
   dog: Dog | null = null;
@@ -259,6 +266,7 @@ export class Hunter {
   }
 
   say(text: string, dur = 2.6) {
+    text = text.replaceAll('{c}', Hunter.critter);
     if (this.bubble) {
       this.rig.root.remove(this.bubble);
       (this.bubble.material as THREE.SpriteMaterial).map?.dispose();

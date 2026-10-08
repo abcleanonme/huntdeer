@@ -487,6 +487,85 @@ export function buildTrap(): THREE.Group {
   return g;
 }
 
+type Part = (geo: THREE.BufferGeometry, color: number, x: number, y: number, z: number, sx?: number, sy?: number, sz?: number) => THREE.Mesh;
+function partAdder(g: THREE.Group): Part {
+  return (geo, color, x, y, z, sx = 1, sy = 1, sz = 1) => {
+    const m = mesh(geo, color, x, y, z);
+    m.scale.set(sx, sy, sz);
+    g.add(m);
+    return m;
+  };
+}
+
+/** A scarlet macaw for a perch: red body, yellow and blue wings, long red tail, hooked pale beak. Faces +z, feet at y=0. */
+function buildParrot(): THREE.Group {
+  const g = new THREE.Group();
+  g.userData.kind = 'parrot';
+  const p = partAdder(g);
+  const red = 0xd32f2f;
+  p(sphere(0.17, 1), red, 0, 0.28, 0, 1, 1.4, 1);
+  p(sphere(0.13, 1), red, 0, 0.53, 0.04);
+  for (const s of [-1, 1]) {
+    p(sphere(0.07, 1), 0xf5f5f5, s * 0.08, 0.53, 0.09, 0.5, 1, 1);
+    p(sphere(0.025, 0), 0x111111, s * 0.11, 0.55, 0.1);
+    p(box(0.05, 0.13, 0.22), 0xfdd835, s * 0.17, 0.37, -0.02).rotation.z = s * 0.12;
+    p(box(0.05, 0.26, 0.19), 0x1e88e5, s * 0.17, 0.18, -0.05).rotation.z = s * 0.12;
+    p(box(0.04, 0.04, 0.1), 0x555555, s * 0.06, 0.03, 0.03);
+  }
+  p(cone(0.065, 0.16, 6).rotateX(Math.PI * 0.75), 0xf0ead6, 0, 0.47, 0.17);
+  p(box(0.06, 0.05, 0.06), 0x222222, 0, 0.43, 0.13);
+  // Long tail hanging down and back behind the perch, with blue tips.
+  p(box(0.09, 0.55, 0.03), red, 0, 0.05, -0.17).rotation.x = 0.35;
+  p(box(0.075, 0.15, 0.035), 0x1e88e5, 0, -0.26, -0.28).rotation.x = 0.35;
+  return g;
+}
+
+/** A toucan: black body, yellow bib, blue eye rings and a huge orange beak. Faces +z, feet at y=0. */
+function buildToucan(): THREE.Group {
+  const g = new THREE.Group();
+  g.userData.kind = 'toucan';
+  const p = partAdder(g);
+  const black = 0x1b1b1b;
+  p(sphere(0.17, 1), black, 0, 0.27, 0, 1, 1.35, 1);
+  p(sphere(0.12, 1), 0xfff176, 0, 0.4, 0.09, 1, 1, 0.6);
+  p(sphere(0.12, 1), black, 0, 0.5, 0.02);
+  for (const s of [-1, 1]) {
+    p(sphere(0.045, 1), 0x4fc3f7, s * 0.1, 0.52, 0.06);
+    p(sphere(0.022, 0), 0x111111, s * 0.125, 0.52, 0.07);
+    p(box(0.05, 0.3, 0.2), black, s * 0.16, 0.25, -0.03).rotation.z = s * 0.1;
+    p(box(0.04, 0.04, 0.1), 0x4f6b8a, s * 0.06, 0.03, 0.03);
+  }
+  p(cone(0.085, 0.4, 7).rotateX(Math.PI / 2), 0xff9800, 0, 0.5, 0.3, 0.75, 1, 1);
+  p(box(0.12, 0.04, 0.04), 0xd32f2f, 0, 0.5, 0.11);
+  p(cone(0.03, 0.08, 6).rotateX(Math.PI / 2), black, 0, 0.5, 0.52);
+  p(box(0.1, 0.3, 0.04), black, 0, 0.06, -0.14).rotation.x = 0.3;
+  p(sphere(0.05, 0), 0xd32f2f, 0, 0.1, -0.1);
+  return g;
+}
+
+/** Height of the decoy crate's lid; the lodge map rests on it. */
+export const CRATE_HEIGHT = 0.82;
+
+/** A Trophy King Outfitters shipping crate for robo-decoys, with a spare decoy and some straw spilling out. */
+export function buildDecoyCrate(): THREE.Group {
+  const g = new THREE.Group();
+  const p = partAdder(g);
+  p(box(1.4, 0.74, 1.0), 0xa1795a, 0, 0.37, 0);
+  p(box(1.48, 0.08, 1.08), 0x8d6e63, 0, 0.78, 0);
+  for (const x of [-0.66, 0.66]) for (const z of [-0.46, 0.46]) p(box(0.1, 0.76, 0.1), 0x6d4c41, x, 0.38, z);
+  for (const z of [-0.51, 0.51]) p(box(1.3, 0.1, 0.03), 0x6d4c41, 0, 0.4, z);
+  p(box(0.7, 0.24, 0.02), 0xd4af37, 0, 0.55, 0.53);
+  p(box(0.5, 0.06, 0.025), 0x3e2723, 0, 0.55, 0.535);
+  for (let i = 0; i < 5; i++) p(box(0.4, 0.03, 0.08), 0xe6c86e, -0.5 + i * 0.25, 0.02, 0.62 + (i % 2) * 0.1).rotation.y = i * 0.7;
+  const decoy = buildSecretItem('decoy');
+  decoy.getObjectByName('led')?.removeFromParent();
+  decoy.scale.setScalar(0.7);
+  decoy.position.set(1.15, 0, 0.3);
+  decoy.rotation.y = -0.6;
+  g.add(decoy);
+  return g;
+}
+
 /** Props and pickups for the hidden campaign. */
 export function buildSecretItem(item: SecretItem): THREE.Group {
   const g = new THREE.Group();
@@ -560,24 +639,24 @@ export function buildSecretItem(item: SecretItem): THREE.Group {
       add(box(0.15, 0.06, 0.06), glow(0xffb74d), 0.07, -0.05, 0);
       break;
     case 'cage': {
-      add(box(1.8, 0.1, 1.8), mat(0x5d4037), 0, 0.05, 0);
-      add(box(1.8, 0.1, 1.8), mat(0x5d4037), 0, 1.75, 0);
+      // Wooden floor and roof, steel bars, a perch, and a jungle bird inside. Everything but the bird is tagged
+      // `cagePart` so opening the cage can knock the whole thing apart.
+      const part = (o: THREE.Object3D) => ((o.userData.cagePart = true), o);
+      part(add(box(1.8, 0.1, 1.8), mat(0x5d4037), 0, 0.05, 0));
+      part(add(box(1.8, 0.1, 1.8), mat(0x5d4037), 0, 1.75, 0));
+      for (const [x, z] of [[-0.85, -0.85], [0.85, -0.85], [-0.85, 0.85], [0.85, 0.85]]) part(add(box(0.1, 1.7, 0.1), mat(0x4e342e), x, 0.9, z));
       for (let i = 0; i < 6; i++) {
         for (const s of [-1, 1]) {
-          add(cyl(0.03, 0.03, 1.7, 4), mat(0x9e9e9e), -0.75 + i * 0.3, 0.9, 0.85 * s);
-          add(cyl(0.03, 0.03, 1.7, 4), mat(0x9e9e9e), 0.85 * s, 0.9, -0.75 + i * 0.3);
+          part(add(cyl(0.03, 0.03, 1.7, 4), mat(0x9e9e9e), -0.75 + i * 0.3, 0.9, 0.85 * s));
+          part(add(cyl(0.03, 0.03, 1.7, 4), mat(0x9e9e9e), 0.85 * s, 0.9, -0.75 + i * 0.3));
         }
       }
-      const critter = new THREE.Group();
+      part(add(cyl(0.04, 0.04, 1.6, 5).rotateZ(Math.PI / 2), mat(0x6d4c41), 0, 0.55, 0)).name = 'perch';
+      part(add(box(0.3, 0.3, 0.1), glow(0xffb74d), 0, 0.9, 0.92));
+      const critter = Math.random() < 0.5 ? buildParrot() : buildToucan();
       critter.name = 'critter';
-      const parrot = Math.random() < 0.5;
-      critter.add(new THREE.Mesh(sphere(0.3, 1), mat(parrot ? 0xe53935 : 0x795548)));
-      const h = new THREE.Mesh(sphere(0.22, 1), mat(parrot ? 0x43a047 : 0xa1887f));
-      h.position.set(0, 0.4, 0.1);
-      critter.add(h);
-      critter.position.y = 0.5;
+      critter.position.y = 0.58;
       g.add(critter);
-      add(box(0.3, 0.3, 0.1), glow(0xffb74d), 0, 0.9, 0.92);
       break;
     }
     case 'feather':
@@ -587,14 +666,15 @@ export function buildSecretItem(item: SecretItem): THREE.Group {
       add(sphere(0.45, 1), mat(0x6d4c41), 0, 0.35, 0).scale.set(1, 0.7, 1.4);
       add(sphere(0.25, 1), mat(0x2e7d32), 0, 0.7, 0.4);
       add(box(0.2, 0.06, 0.2), mat(0xf2c94c), 0, 0.68, 0.65);
-      add(box(0.03, 0.5, 0.03), mat(0x222222), 0, 1.0, -0.2);
-      const led = add(sphere(0.06, 0), new THREE.MeshBasicMaterial({ color: 0xff1744 }), 0, 1.27, -0.2);
+      add(box(0.12, 0.08, 0.12), mat(0x37474f), 0, 0.64, -0.2);
+      add(box(0.03, 0.5, 0.03), mat(0x222222), 0, 0.87, -0.2);
+      const led = add(sphere(0.06, 0), new THREE.MeshBasicMaterial({ color: 0xff1744 }), 0, 1.14, -0.2);
       led.name = 'led';
       break;
     }
     case 'lodgemap':
-      add(cyl(0.12, 0.12, 0.8, 8).rotateZ(Math.PI / 2), glow(0xfff3c4), 0, 0.3, 0);
-      add(box(0.06, 0.06, 0.06), mat(0xc62828), 0, 0.3, 0.12);
+      add(cyl(0.12, 0.12, 0.8, 8).rotateZ(Math.PI / 2), glow(0xfff3c4), 0, 0.12, 0);
+      add(box(0.06, 0.06, 0.06), mat(0xc62828), 0, 0.12, 0.12);
       break;
   }
   return g;
@@ -968,6 +1048,8 @@ export function buildExitLandmark(kind: 'cave' | 'temple' | 'beaver', glow: THRE
     door.position.set(0, 2.6, -1.95);
     g.add(door);
     colliders.push({ x: -2.6, z: -0.5, r: 1.1 }, { x: 2.6, z: -0.5, r: 1.1 }, { x: -4, z: -7, r: 5 }, { x: 4, z: -7, r: 5 });
+    // The dark doorway between the pillars is deep enough to hide in.
+    g.userData.hideZones = [{ x: 0, z: -1.2, r: 1.7 }];
   } else {
     // Beaver lodge: a dome of sticks in a little pond, with a dark doorway at the waterline.
     g.add(mesh(cyl(6.5, 6.5, 0.1, 18), 0x4f7f8a, 0, 0.02, -3.5, false));

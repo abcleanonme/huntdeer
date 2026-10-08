@@ -205,8 +205,8 @@ export const HUNTERS: Record<HunterKind, HunterDef> = {
     quips: [
       'Shhh. I am one with nature.',
       'I made this bow myself. Out of regret.',
-      'The deer cannot see me. I am a tree.',
-      'Hmm. Smells like venison in here.',
+      'The {c} cannot see me. I am a tree.',
+      'Hmm. Smells like {c} in here.',
       'Twelve years of archery and I\'ve hit one (1) stump.',
     ],
   },
@@ -229,7 +229,7 @@ export const HUNTERS: Record<HunterKind, HunterDef> = {
     projectile: 'bullet',
     vest: 0xff6a00,
     quips: [
-      'Here deery deery deer...',
+      'Heeere, {c} {c} {c}...',
       'I definitely saw a 14-pointer.',
       'My wife is gonna LOVE this one.',
       'Is it deer season or duck season?',
@@ -378,7 +378,7 @@ export const HUNTERS: Record<HunterKind, HunterDef> = {
     quips: [
       'Drone cam, activate.',
       'This is technically still hunting.',
-      'Is that a deer or a pixel?',
+      'Is that a {c} or a pixel?',
       'Battery at 4%. Living on the edge.',
     ],
   },
@@ -429,7 +429,7 @@ export const HUNTERS: Record<HunterKind, HunterDef> = {
       'Every wall deserves a head!',
       'Do you know how much this vest cost?',
       'Guards! GUARDS! Somebody!',
-      'I didn\'t get this crown by being nice to deer.',
+      'I didn\'t get this crown by being nice to critters.',
     ],
   },
 };
@@ -662,7 +662,7 @@ export const MAPS: MapDef[] = [
       title: 'The Decoy Factory',
       page:
         'Robo-decoys. Hundreds of them, all pointed at the swamp, all stamped TK OUTFITTERS. ' +
-        'Inside the crate is a hand-drawn map: "TROPHY KING LODGE. Gala tonight. DO NOT let the deer in." \n\n' +
+        'Inside the crate is a hand-drawn map: "TROPHY KING LODGE. Gala tonight. DO NOT let the critters in." \n\n' +
         'Well. Now you have to go.',
     },
   },
@@ -756,11 +756,20 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'king', name: 'Long Live the Moose', desc: 'Dethrone the Trophy King.', secret: true },
 ];
 
-export const BOOP_QUIPS = ['MY HAT!', 'Not again!', 'Was that a deer?!', 'I tripped on a twig!', 'Nobody saw that.'];
+export const BOOP_QUIPS = ['MY HAT!', 'Not again!', 'Was that a {c}?!', 'I tripped on a twig!', 'Nobody saw that.'];
 export const SPOT_QUIPS = ['THERE!', 'Hold still, buddy!', 'Gotcha now!', 'Ooh, that\'s a big one!'];
 export const MISS_QUIPS = ['Dang scope!', 'Warning shot!', 'The sun was in my eyes!', 'I meant to do that.'];
 export const LOST_QUIPS = ['Must\'ve been the wind.', 'Huh. Lost it.', 'Was it ever really there?', 'Time for a snack break.'];
 export const STINK_QUIPS = ['OH GOD THE SMELL', 'My eyes!!', 'Not worth it!', '*gagging noises*'];
-export const HIT_QUIPS = ['Ow!', 'Rude!', 'I felt that in my antlers.', 'That\'s gonna leave a mark.'];
+export const HIT_QUIPS = ['Ow!', 'Rude!', 'That\'s gonna leave a mark.'];
+/** Extra hit lines that only make sense for one critter. */
+export const CRITTER_HIT_QUIPS: Record<AnimalId, string[]> = {
+  deer: ['I felt that in my antlers.', 'Right in the white tail!'],
+  rabbit: ['Right in the cottontail!', 'My ears! My beautiful ears!'],
+  skunk: ['Hey! Watch the stripe!', 'You\'re gonna regret that smell.'],
+  bear: ['That went right through the fur.', 'Ow, my hibernation weight!'],
+  duck: ['Ruffled my feathers!', 'Ow! My bill!'],
+  moose: ['I felt that in my antlers.', 'I am too old for this.'],
+};
 export const SCARED_QUIPS = ['MOMMAAAA!', 'I\'m going home!', 'Nope nope nope nope', 'Tell my truck I love it!'];
 export const SLEEP_QUIPS = ['Zzz...', 'Zzzz... *hic*', 'Five more minutes...'];

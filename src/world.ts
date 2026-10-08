@@ -35,6 +35,7 @@ export class World {
   scene = new THREE.Scene();
   colliders: Collider[] = [];
   bushes: { x: number; z: number; r: number }[] = [];
+  hideZones: { x: number; z: number; r: number }[] = [];
   ponds: Pond[] = [];
   trucks: THREE.Vector3[] = [];
   /** Tree stands hunters can climb. The flyer stand (near the trucks) is kept free for the forest secret. */
@@ -138,6 +139,11 @@ export class World {
 
   inWater(x: number, z: number) {
     return this.ponds.some((p) => Math.hypot(x - p.x, z - p.z) < p.r * 0.85);
+  }
+
+  /** Dark nooks (like the temple doorway) where hunters can't see you unless they're right on top of you. */
+  inHideZone(x: number, z: number) {
+    return this.hideZones.some((b) => (x - b.x) ** 2 + (z - b.z) ** 2 < b.r * b.r);
   }
 
   inBush(x: number, z: number) {
@@ -348,9 +354,29 @@ export class World {
       for (const c of lm.userData.colliders as { x: number; z: number; r: number }[]) {
         this.colliders.push({ x: e.x + c.x, z: e.z - 1.5 + c.z, r: c.r, blocksSight: true });
       }
+      for (const c of (lm.userData.hideZones ?? []) as { x: number; z: number; r: number }[]) {
+        this.hideZones.push({ x: e.x + c.x, z: e.z - 1.5 + c.z, r: c.r });
+      }
     }
     eg.visible = false;
     this.scene.add(eg);
+  }
+
+  /**
+   * Set an object down on the terrain at (x, z) facing `yaw`, pitched and rolled to match the slope under a
+   * footprint `halfW` wide and `halfL` long (local x and z), like a truck parked on a hill.
+   */
+  settle(obj: THREE.Object3D, x: number, z: number, yaw: number, halfW: number, halfL: number) {
+    const sin = Math.sin(yaw);
+    const cos = Math.cos(yaw);
+    const at = (lx: number, lz: number) => this.height(x + lx * cos + lz * sin, z - lx * sin + lz * cos);
+    const front = at(0, halfL);
+    const back = at(0, -halfL);
+    const right = at(halfW, 0);
+    const left = at(-halfW, 0);
+    obj.position.set(x, (front + back + right + left) / 4 - 0.05, z);
+    obj.rotation.order = 'YXZ';
+    obj.rotation.set(-Math.atan2(front - back, halfL * 2), yaw, Math.atan2(right - left, halfW * 2));
   }
 
   /** Light up the exit: show the beacon and make the doorway glow. */
@@ -456,22 +482,24 @@ export class World {
     ];
     for (const p of truckSpots) {
       const d = buildDecorations('truck', rng);
-      d.position.set(p.x, this.height(p.x, p.z), p.z);
-      // Parked roughly facing into the woods.
-      d.rotation.y = Math.atan2(-p.x, -p.z) + (rng() - 0.5) * 0.8;
+      // Parked roughly facing into the woods, wheels on the slope.
+      this.settle(d, p.x, p.z, Math.atan2(-p.x, -p.z) + (rng() - 0.5) * 0.8, 1.0, 2.2);
       this.statics.add(d);
       this.colliders.push({ x: p.x, z: p.z, r: 2.6, blocksSight: true });
       this.trucks.push(p.clone().setY(this.height(p.x, p.z)));
     }
     const addStand = (p: THREE.Vector3, yaw: number, flyer: boolean) => {
       const d = buildDecorations('stand', rng);
-      d.position.set(p.x, this.height(p.x, p.z), p.z);
+      // Stands are strapped to a tree, so they stay upright; sink them to the lowest leg so none dangle on a slope.
+      let y = this.height(p.x, p.z);
+      for (let k = 0; k < 6; k++) y = Math.min(y, this.height(p.x + Math.cos(k * 1.05) * 1.1, p.z + Math.sin(k * 1.05) * 1.1));
+      d.position.set(p.x, y, p.z);
       d.rotation.y = yaw;
       this.statics.add(d);
       this.colliders.push({ x: p.x, z: p.z, r: d.userData.radius as number, blocksSight: false });
       const ladder = new THREE.Vector3(p.x + Math.sin(yaw) * 2.3, 0, p.z + Math.cos(yaw) * 2.3);
       ladder.y = this.height(ladder.x, ladder.z);
-      this.stands.push({ pos: p.clone().setY(this.height(p.x, p.z)), yaw, ladder, flyer });
+      this.stands.push({ pos: p.clone().setY(y), yaw, ladder, flyer });
     };
     // One stand next to the first truck: that's where hunters pin their flyers.
     if (this.trucks.length) {
