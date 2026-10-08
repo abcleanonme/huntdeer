@@ -1,0 +1,294 @@
+// In-game heads-up display (DOM overlay on top of the canvas).
+import type { AnimalDef } from './data';
+
+export interface ObjectiveView {
+  label: string;
+  have: number;
+  need: number;
+  done: boolean;
+  locked: boolean;
+  isTime?: boolean;
+}
+
+export interface Ping {
+  angle: number;
+  strength: number;
+  color: string;
+}
+
+export class Hud {
+  root: HTMLDivElement;
+  private hearts: HTMLDivElement;
+  private staminaFill: HTMLDivElement;
+  private objectives: HTMLDivElement;
+  private timer: HTMLDivElement;
+  private stealth: HTMLDivElement;
+  private stealthFill: HTMLDivElement;
+  private stealthLabel: HTMLSpanElement;
+  private abilityBtn: HTMLButtonElement;
+  private abilityRing: HTMLDivElement;
+  private boopBtn: HTMLButtonElement;
+  private jumpBtn: HTMLButtonElement;
+  private orangeBtn: HTMLButtonElement;
+  private orangeFill: HTMLDivElement;
+  private lastOrange = '';
+  private toasts: HTMLDivElement;
+  private pings: HTMLDivElement;
+  private pingEls: HTMLDivElement[] = [];
+  private flash: HTMLDivElement;
+  private hint: HTMLDivElement;
+  private lastHearts = '';
+  private lastObj = '';
+  private lastSecret = '';
+  private lastBoss = '';
+  private secretEl: HTMLDivElement;
+  private bossEl: HTMLDivElement;
+  private bannerEl: HTMLDivElement;
+  private bannerQueue: { title: string; desc: string }[] = [];
+  private bannerBusy = false;
+
+  constructor(
+    parent: HTMLElement,
+    animal: AnimalDef,
+    isTouch: boolean,
+    actions: { ability: () => void; boop: () => void; jump: () => void; pause: () => void; orange: () => void },
+  ) {
+    const r = (this.root = document.createElement('div'));
+    r.className = 'hud';
+    r.innerHTML = `
+      <div class="hud-tl">
+        <div class="hearts"></div>
+        <div class="stamina"><div class="stamina-fill"></div></div>
+        <div class="objectives"></div>
+        <div class="secret-obj"></div>
+      </div>
+      <div class="boss-bar"><div class="boss-name">THE TROPHY KING</div><div class="boss-hats"></div><div class="boss-tip"></div></div>
+      <div class="banner"></div>
+      <div class="hud-tr">
+        <div class="timer">0:00</div>
+        <button class="pause-btn" aria-label="Pause">II</button>
+      </div>
+      <div class="stealth"><span class="stealth-label">HIDDEN</span><div class="stealth-bar"><div class="stealth-fill"></div></div></div>
+      <div class="pings"></div>
+      <div class="toasts"></div>
+      <div class="flash"></div>
+      <div class="hint"></div>
+      <div class="hud-br">
+        <button class="act-btn orange-btn"><div class="orange-fill"></div><span>ORANGE</span></button>
+        <button class="act-btn boop-btn">BOOP</button>
+        <button class="act-btn jump-btn">JUMP</button>
+        <button class="act-btn ability-btn"><div class="ability-ring"></div><span>${animal.ability.name}</span></button>
+      </div>
+    `;
+    parent.appendChild(r);
+    const q = <T extends HTMLElement>(s: string) => r.querySelector(s) as T;
+    this.hearts = q('.hearts');
+    this.staminaFill = q('.stamina-fill');
+    this.objectives = q('.objectives');
+    this.timer = q('.timer');
+    this.stealth = q('.stealth');
+    this.stealthFill = q('.stealth-fill');
+    this.stealthLabel = q('.stealth-label');
+    this.abilityBtn = q('.ability-btn');
+    this.abilityRing = q('.ability-ring');
+    this.boopBtn = q('.boop-btn');
+    this.jumpBtn = q('.jump-btn');
+    this.orangeBtn = q('.orange-btn');
+    this.orangeFill = q('.orange-fill');
+    this.toasts = q('.toasts');
+    this.pings = q('.pings');
+    this.flash = q('.flash');
+    this.hint = q('.hint');
+    this.secretEl = q('.secret-obj');
+    this.bossEl = q('.boss-bar');
+    this.bannerEl = q('.banner');
+
+    const bind = (el: HTMLElement, fn: () => void) => {
+      el.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fn();
+      }, { passive: false });
+      el.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        fn();
+      });
+    };
+    bind(this.abilityBtn, actions.ability);
+    bind(this.boopBtn, actions.boop);
+    bind(this.jumpBtn, actions.jump);
+    bind(this.orangeBtn, actions.orange);
+    bind(q('.pause-btn'), actions.pause);
+
+    if (!isTouch) {
+      r.classList.add('desktop');
+      this.hint.textContent = 'WASD move · Shift sprint · Space jump · E ability · F boop · R wear orange · Mouse look · Esc pause';
+      setTimeout(() => this.hint.classList.add('fade'), 9000);
+    } else {
+      this.hint.textContent = 'Left side: move (push far to sprint) · Right side: look';
+      setTimeout(() => this.hint.classList.add('fade'), 7000);
+    }
+  }
+
+  setHearts(have: number, max: number) {
+    const s = `${have}/${max}`;
+    if (s === this.lastHearts) return;
+    this.lastHearts = s;
+    this.hearts.innerHTML = Array.from({ length: max }, (_, i) => `<span class="heart ${i < have ? '' : 'empty'}">♥</span>`).join('');
+  }
+
+  setStamina(v: number, winded: boolean) {
+    this.staminaFill.style.width = `${v * 100}%`;
+    this.staminaFill.classList.toggle('winded', winded);
+  }
+
+  setObjectives(list: ObjectiveView[]) {
+    const html = list
+      .map((o) => {
+        const prog = o.isTime ? `${Math.min(o.have, o.need)}s / ${o.need}s` : o.need > 1 ? `${Math.min(o.have, o.need)}/${o.need}` : '';
+        return `<div class="obj ${o.done ? 'done' : ''} ${o.locked ? 'locked' : ''}"><i class="tick"></i>${o.label} <b>${prog}</b></div>`;
+      })
+      .join('');
+    if (html === this.lastObj) return;
+    this.lastObj = html;
+    this.objectives.innerHTML = html;
+  }
+
+  /** The hidden objective, shown under the regular ones once found. */
+  setSecret(v: { label: string; have: number; need: number } | null) {
+    const html = v ? `<div class="obj secret ${v.have >= v.need ? 'done' : ''}"><i class="tick"></i>${v.label} <b>${v.need > 1 ? `${Math.min(v.have, v.need)}/${v.need}` : ''}</b></div>` : '';
+    if (html === this.lastSecret) return;
+    this.lastSecret = html;
+    this.secretEl.innerHTML = html;
+  }
+
+  setBoss(hatsLeft: number, total: number, vulnerable: boolean) {
+    const key = `${hatsLeft}/${total}/${vulnerable}`;
+    if (key === this.lastBoss) return;
+    this.lastBoss = key;
+    this.bossEl.classList.add('on');
+    this.bossEl.classList.toggle('vuln', vulnerable);
+    this.bossEl.querySelector('.boss-hats')!.innerHTML = Array.from({ length: total }, (_, i) => `<span class="bhat ${i < hatsLeft ? '' : 'gone'}"></span>`).join('');
+    this.bossEl.querySelector('.boss-tip')!.textContent =
+      hatsLeft <= 0 ? 'Dethroned!' : vulnerable ? 'Reloading! BOOP HIM NOW!' : 'Dodge his shot, then boop him while he reloads';
+  }
+
+  /** Achievement-style banner that slides in at the top. Queued so they never overlap. */
+  banner(title: string, desc: string) {
+    this.bannerQueue.push({ title, desc });
+    if (!this.bannerBusy) this.nextBanner();
+  }
+
+  private nextBanner() {
+    const b = this.bannerQueue.shift();
+    if (!b) {
+      this.bannerBusy = false;
+      return;
+    }
+    this.bannerBusy = true;
+    const el = this.bannerEl;
+    el.innerHTML = `<div class="banner-k">Achievement</div><div class="banner-t"></div><div class="banner-d"></div>`;
+    el.querySelector('.banner-t')!.textContent = b.title;
+    el.querySelector('.banner-d')!.textContent = b.desc;
+    el.classList.remove('on');
+    void el.offsetWidth;
+    el.classList.add('on');
+    setTimeout(() => {
+      el.classList.remove('on');
+      setTimeout(() => this.nextBanner(), 400);
+    }, 3000);
+  }
+
+  setTime(t: number) {
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    this.timer.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+  setStealth(level: number) {
+    const pct = Math.min(1, level) * 100;
+    this.stealthFill.style.width = `${pct}%`;
+    let label = 'HIDDEN';
+    let cls = 'hidden';
+    if (level >= 1) {
+      label = 'SPOTTED!';
+      cls = 'spotted';
+    } else if (level > 0.35) {
+      label = 'SUSPICIOUS';
+      cls = 'sus';
+    } else if (level > 0.02) {
+      label = 'NOTICED?';
+      cls = 'sus';
+    }
+    this.stealth.className = `stealth ${cls}`;
+    this.stealthLabel.textContent = label;
+  }
+
+  setAbility(cooldownFrac: number, active: boolean) {
+    const deg = (1 - cooldownFrac) * 360;
+    this.abilityRing.style.background = `conic-gradient(rgba(255,255,255,0.9) ${deg}deg, rgba(0,0,0,0.35) ${deg}deg)`;
+    this.abilityBtn.classList.toggle('ready', cooldownFrac <= 0);
+    this.abilityBtn.classList.toggle('active', active);
+  }
+
+  setBoop(ready: boolean) {
+    this.boopBtn.classList.toggle('ready', ready);
+  }
+
+  /** Hunter's orange: hidden when you have none; full when held; drains while worn. */
+  setOrange(held: boolean, wornFrac: number) {
+    const key = `${held}/${wornFrac.toFixed(2)}`;
+    if (key === this.lastOrange) return;
+    this.lastOrange = key;
+    const show = held || wornFrac > 0;
+    this.orangeBtn.style.display = show ? 'block' : 'none';
+    this.orangeBtn.classList.toggle('ready', held && wornFrac <= 0);
+    this.orangeBtn.classList.toggle('active', wornFrac > 0);
+    this.orangeFill.style.height = `${(wornFrac > 0 ? wornFrac : 1) * 100}%`;
+  }
+
+  setFlying(f: boolean) {
+    this.jumpBtn.classList.toggle('active', f);
+  }
+
+  setPings(pings: Ping[]) {
+    while (this.pingEls.length < pings.length) {
+      const el = document.createElement('div');
+      el.className = 'ping';
+      this.pings.appendChild(el);
+      this.pingEls.push(el);
+    }
+    this.pingEls.forEach((el, i) => {
+      const p = pings[i];
+      if (!p) {
+        el.style.display = 'none';
+        return;
+      }
+      el.style.display = 'block';
+      el.style.transform = `rotate(${p.angle}rad) translateY(calc(-1 * min(36vh, 36vw)))`;
+      el.style.opacity = `${0.25 + p.strength * 0.75}`;
+      el.style.borderBottomColor = p.color;
+    });
+  }
+
+  toast(text: string, kind: 'good' | 'bad' | 'info' | 'secret' = 'info') {
+    const el = document.createElement('div');
+    el.className = `toast ${kind}`;
+    el.textContent = text;
+    this.toasts.appendChild(el);
+    const life = kind === 'secret' ? 4200 : 2200;
+    setTimeout(() => el.classList.add('out'), life);
+    setTimeout(() => el.remove(), life + 600);
+    while (this.toasts.children.length > 3) this.toasts.firstElementChild?.remove();
+  }
+
+  hurt() {
+    this.flash.classList.remove('on');
+    void this.flash.offsetWidth;
+    this.flash.classList.add('on');
+  }
+
+  destroy() {
+    this.root.remove();
+  }
+}
