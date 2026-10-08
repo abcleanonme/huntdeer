@@ -29,6 +29,7 @@ npm run ios:open      # open in Xcode, pick your team under Signing, then Run
 - Save data is mirrored to native storage (`@capacitor/preferences`) so iOS can't wipe it; hits and pickups use haptics.
 - Fonts are bundled, so the app works fully offline.
 - `npm run icons` regenerates the app icon and splash from the in-game deer model (needs Playwright).
+- Shipping to the App Store: see [RELEASE.md](RELEASE.md). Listing text, privacy policy and screenshots live in `store/` (`npm run screenshots` regenerates them).
 
 ## Controls
 

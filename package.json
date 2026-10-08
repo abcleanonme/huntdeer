@@ -13,7 +13,8 @@
     "ios:sync": "npm run build && cap sync ios",
     "ios:open": "cap open ios",
     "ios:run": "npm run build && cap run ios",
-    "icons": "node tools/icons.cjs"
+    "icons": "node tools/icons.cjs",
+    "screenshots": "node tools/screenshots.cjs"
   },
   "repository": {
     "type": "git",
