@@ -14,7 +14,8 @@
     "ios:open": "cap open ios",
     "ios:run": "npm run build && cap run ios",
     "icons": "node tools/icons.cjs",
-    "screenshots": "node tools/screenshots.cjs"
+    "screenshots": "node tools/screenshots.cjs",
+    "keyart": "node tools/keyart.cjs"
   },
   "repository": {
     "type": "git",

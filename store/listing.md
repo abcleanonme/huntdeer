@@ -58,3 +58,6 @@ Expected result: 9+ (or 7+ under the newer scale). Apple decides the final ratin
 
 ## Screenshots
 `store/screenshots/iphone-6.9/` (2868x1320) and `store/screenshots/ipad-13/` (2752x2064). Upload to the 6.9" iPhone and 13" iPad slots; Apple scales them down for smaller devices. Regenerate with `npm run screenshots`.
+
+## Header and search results art
+`store/keyart/header-3840x1646.png` (product page header, 21:9) and `store/keyart/search-3840x2560.png` (search results, 3:2). No text on purpose, since Apple overlays the app name and icon. Regenerate with `npm run keyart`.
