@@ -9,7 +9,7 @@ import { formatHeight, PERSONALITY_LABEL, type Personality } from './hunters';
 import { getLayout, layoutPref, setLayoutPref, type LayoutPref } from './layout';
 import type { HunterLook } from './models';
 import { animalPortrait, hunterPortrait, lockedPortrait } from './portraits';
-import { totalStars, type HatEntry, type SaveData } from './save';
+import { maxStars, totalStars, type HatEntry, type SaveData } from './save';
 
 const LAYOUT_LABEL: Record<LayoutPref, string> = {
   auto: 'Screen: auto',
@@ -25,6 +25,8 @@ const layoutLabel = () => {
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const starStr = (n: number, of = 3) => `<span class="stars-inline">${'<i class="st on"></i>'.repeat(n)}${'<i class="st"></i>'.repeat(of - n)}</span>`;
+/** Hunter log cards per page. */
+const LOG_PAGE = 60;
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 
 export function animalUnlocked(save: SaveData, a: AnimalDef) {
@@ -40,6 +42,7 @@ export interface TitleActions {
   log: () => void;
   achievements: () => void;
   caseFile: () => void;
+  credits: () => void;
 }
 
 export class Ui {
@@ -87,13 +90,14 @@ export class Ui {
         </div>
         <button class="big-btn play">PLAY</button>
         <div class="title-row">
-          <button class="mid-btn log">Hunter Log <b>${save.hats.length}</b></button>
+          <button class="mid-btn log">Hunter Log <b>${save.totalHats}</b></button>
           <button class="mid-btn ach">Achievements <b>${Object.keys(save.achievements).length}/${ACHIEVEMENTS.length}</b></button>
         </div>
-        ${hasCase ? `<button class="mid-btn case">Case File <b>${save.secretsDone.length + (save.kingDefeated ? 1 : 0)}/5</b></button>` : ''}
+        ${hasCase ? `<div class="title-row"><button class="mid-btn case">Case File <b>${save.secretsDone.length + (save.kingDefeated ? 1 : 0)}/5</b></button>${save.kingDefeated ? '<button class="mid-btn credits">Credits</button>' : ''}</div>` : ''}
       </div>`,
       'title',
     );
+    this.on('.credits', act.credits);
     this.on('.play', act.play);
     this.on('.log', act.log);
     this.on('.ach', act.achievements);
@@ -104,7 +108,6 @@ export class Ui {
     const stars = totalStars(save);
     if (!animalUnlocked(save, ANIMALS.find((a) => a.id === this.selAnimal)!)) this.selAnimal = 'deer';
     if (!mapUnlocked(save, MAPS.find((m) => m.id === this.selMap)!)) this.selMap = 'forest';
-    const mainMaps = MAPS.filter((m) => !m.hidden);
 
     const animalCards = ANIMALS.filter((a) => !a.unlockSecret || save.kingDefeated || save.secretsFound.length > 0)
       .map((a) => {
@@ -122,8 +125,8 @@ export class Ui {
       .map((m) => {
         const ok = mapUnlocked(save, m);
         const st = save.stars[m.id] ?? 0;
-        const sub = ok ? (m.hidden ? (save.kingDefeated ? 'Dethroned' : 'Gala night') : starStr(st)) : m.hidden ? 'Follow the clues' : `Needs ${m.unlockStars} stars`;
-        const solved = m.secret && save.secretsDone.includes(m.id);
+        const sub = ok ? (m.hidden && !save.kingDefeated ? 'Gala night' : starStr(st)) : m.hidden ? 'Follow the clues' : `Needs ${m.unlockStars} stars`;
+        const solved = m.hidden ? save.kingDefeated : m.secret && save.secretsDone.includes(m.id);
         return `<button class="card map ${ok ? '' : 'locked'} ${m.id === this.selMap ? 'sel' : ''} ${m.hidden ? 'hidden-map' : ''}" data-id="${m.id}" ${ok ? '' : 'disabled'}>
           <div class="swatch" style="background:linear-gradient(${hex(m.sky)} 0 45%, ${hex(m.ground)} 45%)">${solved ? '<span class="solved">CASE CLOSED</span>' : ''}</div>
           <div class="name">${ok ? m.name : '???'}</div>
@@ -144,7 +147,7 @@ export class Ui {
 
     this.show(
       `<div class="select">
-        <div class="sel-head"><button class="back-btn back" aria-label="Back"><i class="chev"></i>Back</button><h2>Pick your critter</h2><div class="stars-total"><i class="st on"></i> ${stars} / ${mainMaps.length * 3}</div></div>
+        <div class="sel-head"><button class="back-btn back" aria-label="Back"><i class="chev"></i>Back</button><h2>Pick your critter</h2><div class="stars-total"><i class="st on"></i> ${stars} / ${maxStars(save)}</div></div>
         <div class="star-help"><i class="st on"></i><span>Each woods awards up to <b>3 stars</b>: escape, take no hits, and beat the par time. Stars unlock new critters and woods. You have <b>${stars}</b>${nextUnlock(stars)}.</span></div>
         <div class="row">${animalCards}</div>
         <div class="detail">
@@ -206,12 +209,14 @@ export class Ui {
     this.on('.back', onBack);
   }
 
-  hunterLog(save: SaveData, onBack: () => void) {
+  hunterLog(save: SaveData, onBack: () => void, shown = LOG_PAGE) {
     const hats = [...save.hats].sort((a, b) => b.score - a.score);
     const kindsLogged = new Set(hats.map((h) => h.kind)).size;
     const best = hats[0];
+    // Portraits are rendered one by one, so long logs come in pages.
+    const more = hats.length > shown ? `<button class="mid-btn more">Show more (${hats.length - shown} left)</button>` : '';
     const cards = hats.length
-      ? hats.map((h, i) => trophyCard(h, i)).join('')
+      ? hats.slice(0, shown).map((h, i) => trophyCard(h, i)).join('')
       : `<p class="empty">No hats yet. Sneak up behind a hunter, press BOOP, then grab the hat they drop.</p>`;
     this.show(
       `<div class="select">
@@ -223,10 +228,16 @@ export class Ui {
         </div>
         <p class="small">Scored on the official Doe &amp; Crockett system: weight, height, bragging rights, and a big bonus for golden vests.</p>
         <div class="log-grid">${cards}</div>
+        ${more}
       </div>`,
       'menu',
     );
     this.on('.back', onBack);
+    this.on('.more', () => {
+      const y = this.screen.scrollTop;
+      this.hunterLog(save, onBack, shown + LOG_PAGE);
+      this.screen.scrollTop = y;
+    });
   }
 
   achievements(save: SaveData, onBack: () => void) {
@@ -274,6 +285,37 @@ export class Ui {
     this.on('.back', onBack);
   }
 
+  /** End credits. They roll on their own; tap Skip (or wait) to leave. */
+  credits(save: SaveData, onDone: () => void) {
+    const stars = totalStars(save);
+    const of = maxStars(save);
+    const allStars = stars >= of;
+    const lines = CREDITS.map(([role, who]) => `<div class="cr-role">${esc(role)}</div><div class="cr-who">${esc(who)}</div>`).join('');
+    this.show(
+      `<div class="credits">
+        <div class="cr-roll">
+          <div class="logo">HUNT<span>DEER</span></div>
+          <p class="cr-lead">The Trophy King is dethroned. The Old Moose is free. The woods are quiet tonight.</p>
+          <div class="cr-score"><b><i class="st on"></i> ${stars} / ${of} stars</b>${allStars ? '<span>Every star. Show-off.</span>' : '<span>A few stars are still out there.</span>'}</div>
+          <div class="cr-score small">${save.totalHats} hats collected · ${save.deaths} times mounted</div>
+          ${lines}
+          <p class="cr-lead">No hunters were harmed in the making of this game. Several were deeply embarrassed.</p>
+          <div class="cr-end">THE END?</div>
+        </div>
+        <button class="mid-btn cr-skip">Skip</button>
+      </div>`,
+      'overlay credits-screen',
+    );
+    let left = false;
+    const done = () => {
+      if (left) return;
+      left = true;
+      onDone();
+    };
+    this.on('.cr-skip', done);
+    this.screen.querySelector('.cr-roll')?.addEventListener('animationend', () => setTimeout(done, 1500));
+  }
+
   pause(onResume: () => void, onQuit: () => void) {
     this.show(
       `<div class="title-card small-card">
@@ -303,7 +345,7 @@ export class Ui {
     r: GameResult,
     animal: AnimalDef,
     map: MapDef,
-    extra: { unlocks: string[]; achievements: AchievementDef[]; story: { title: string; page: string } | null },
+    extra: { unlocks: string[]; achievements: AchievementDef[]; story: { title: string; page: string } | null; stars: { have: number; of: number } },
     onRetry: () => void,
     onMenu: () => void,
   ) {
@@ -323,6 +365,7 @@ export class Ui {
           <h2>${r.kingDefeated ? 'The King is dethroned!' : 'You survived!'}</h2>
           <div class="stars">${starHtml}</div>
           <p>${animal.name} lives to see another day.</p>
+          ${r.kingDefeated ? `<div class="unlock done-line">Campaign complete! ${extra.stars.have} / ${extra.stars.of} stars</div>` : ''}
           <p class="small">Time ${t} · Hits taken ${r.hitsTaken} · Hats logged ${r.hats.length}</p>
           ${hats}${story}${unlocks}${ach}
           <button class="big-btn menu-btn">Continue</button>
@@ -352,6 +395,21 @@ export class Ui {
     this.on('.menu-btn', onMenu);
   }
 }
+
+const CREDITS: [string, string][] = [
+  ['Starring', 'Doug the Deer'],
+  ['Also starring', 'Bun Jovi, Pepé Le Nope, Bearnard, Sir Quacksalot'],
+  ['And introducing', 'The Old Moose'],
+  ['The Trophy King', 'Reginald, as himself'],
+  ['Hats', 'Provided by the hunters, involuntarily'],
+  ['Stunt bushes', 'Every bush in the woods'],
+  ['Robo-decoys', 'TK Outfitters (under investigation)'],
+  ['Hunter wrangler', 'Duke the hound, a very good boy'],
+  ['Catering', 'Apples, frozen berries, mangoes and bugs'],
+  ['Hunter named Chucky', 'Chucky'],
+  ['Beta testers', 'Thank you. We heard you about the bugs.'],
+  ['Made by', 'Dillon'],
+];
 
 /** ", next unlock at N stars: X" for the select screen. */
 function nextUnlock(stars: number) {

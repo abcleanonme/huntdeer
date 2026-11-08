@@ -8,7 +8,7 @@ import { Achiever } from './achievements';
 import { Game, type GameEvent, type GameResult } from './game';
 import { Input } from './input';
 import { initNative, haptic } from './native';
-import { loadSave, loadSaveNative, totalStars, writeSave, type HatEntry } from './save';
+import { loadSave, loadSaveNative, maxStars, totalStars, writeSave, type HatEntry } from './save';
 import { animalUnlocked, mapUnlocked, Ui } from './ui';
 import { sfx, unlockAudio } from './audio';
 import { getLayout, onLayout, watchLayout, type Layout } from './layout';
@@ -48,14 +48,27 @@ const achiever = new Achiever(
 // A slowly rotating menu backdrop so the title screen isn't a void.
 let backdrop: Game | null = null;
 
-/** Keep the hat log from growing forever: keep golden hats and the best scores. */
+/** Hats kept in the log. Past this, the lowest scores make room (the total keeps counting). */
+const HAT_LOG_MAX = 1000;
+
+/**
+ * Keep the hat log from growing forever. Golden hats and the best hat of every kind are always kept, so a
+ * full log never blocks the Field Guide or Golden Boy achievements; after that, the best scores win.
+ */
 function logHat(e: HatEntry) {
   save.hats.push(e);
   save.totalHats++;
-  if (save.hats.length > 200) {
-    save.hats.sort((a, b) => Number(b.golden) - Number(a.golden) || b.score - a.score);
-    save.hats.length = 200;
+  if (save.hats.length <= HAT_LOG_MAX) return;
+  const keep = new Set<HatEntry>();
+  const bestOfKind = new Map<string, HatEntry>();
+  for (const h of save.hats) {
+    if (h.golden) keep.add(h);
+    const b = bestOfKind.get(h.kind);
+    if (!b || h.score > b.score) bestOfKind.set(h.kind, h);
   }
+  bestOfKind.forEach((h) => keep.add(h));
+  const rest = save.hats.filter((h) => !keep.has(h)).sort((a, b) => b.score - a.score);
+  save.hats = [...keep, ...rest].slice(0, Math.max(keep.size, HAT_LOG_MAX));
 }
 
 function onEvent(e: GameEvent) {
@@ -117,6 +130,7 @@ function showTitle() {
     log: () => ui.hunterLog(save, showTitle),
     achievements: () => ui.achievements(save, showTitle),
     caseFile: () => ui.caseFile(save, showTitle),
+    credits: () => ui.credits(save, showTitle),
   });
 }
 
@@ -153,7 +167,19 @@ function onEnd(r: GameResult) {
   const moose = ANIMALS.find((a) => a.id === 'moose')!;
   if (!mooseBefore && animalUnlocked(save, moose)) unlocks.push(moose.name);
   const story = r.kingDefeated ? LODGE_PAGE : r.secretDone && map.secret ? { title: `Chapter ${map.secret.chapter}: ${map.secret.title}`, page: map.secret.page } : null;
-  ui.result(r, animal, map, { unlocks, achievements: runAchievements, story }, () => startGame(animal, map), toMenu);
+  // Beating the King for the first time rolls the credits on the way back to the menu.
+  const firstWin = r.kingDefeated && !mooseBefore;
+  const leave = firstWin
+    ? () => {
+        game?.dispose();
+        game = null;
+        delete document.documentElement.dataset.playing;
+        ensureBackdrop();
+        ui.credits(save, toMenu);
+      }
+    : toMenu;
+  const stars = { have: totalStars(save), of: maxStars(save) };
+  ui.result(r, animal, map, { unlocks, achievements: runAchievements, story, stars }, () => startGame(animal, map), leave);
 }
 
 function ensureBackdrop() {

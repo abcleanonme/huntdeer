@@ -424,7 +424,7 @@ export class Game {
       if (o.type === 'eat') {
         for (let i = 0; i < o.count + 4; i++) {
           const p = this.world.freePoint(8, start, 15);
-          const f = buildFood(this.map.food.color);
+          const f = buildFood(this.map.food.color, this.map.food.shape);
           f.position.copy(p).add(new THREE.Vector3(0, 0.6, 0));
           this.world.scene.add(f);
           this.foods.push({ obj: f, pos: p, eaten: false });
@@ -1136,6 +1136,10 @@ export class Game {
       if (f.eaten) continue;
       f.obj.rotation.y += dt * 2;
       f.obj.position.y = f.pos.y + 0.7 + Math.sin(this.time * 3 + f.pos.x) * 0.15;
+      // Bugs buzz their wings.
+      f.obj.children.forEach((c, i) => {
+        if (c.name === 'wing') c.rotation.y = Math.sin(this.time * 40 + i) * 0.5;
+      });
       if (f.pos.distanceTo(p.pos) < 1.6 + p.radius) {
         f.eaten = true;
         f.obj.visible = false;
@@ -2039,7 +2043,15 @@ export class Game {
       Math.sin(this.camPitch),
       Math.cos(this.camYaw) * Math.cos(this.camPitch),
     ).multiplyScalar(dist);
-    const cam = this.camTarget.clone().add(off);
+    let cam = this.camTarget.clone().add(off);
+    // Never let the camera sink into a building (you could see inside the lodge from the roof).
+    const inBlock = (v: THREE.Vector3) => this.world.camBlocks.some((b) => v.x > b.x0 && v.x < b.x1 && v.z > b.z0 && v.z < b.z1 && v.y < b.top(v.z));
+    // Walk it in toward the player until it is outside every block, like a camera bumping into a wall.
+    if (inBlock(cam)) {
+      let t = 0.95;
+      while (t > 0.08 && inBlock(this.camTarget.clone().addScaledVector(off, t))) t -= 0.03;
+      cam = this.camTarget.clone().addScaledVector(off, t);
+    }
     const gh = this.world.height(cam.x, cam.z) + 0.6;
     if (cam.y < gh) cam.y = gh;
     if (this.shake > 0) {
