@@ -58,17 +58,13 @@ export class Hud {
   ) {
     const r = (this.root = document.createElement('div'));
     r.className = 'hud';
-    // .hud-view overlays the 3D view; .hud-panel holds stats + controls. In the full layout the panel is
+    // .hud-view overlays the 3D view; .hud-panel holds stats, timer/pause and controls. In the full layout the panel is
     // display:contents so its children float over the view as before; in the split layout it becomes the
     // bottom panel (see layout.ts).
     r.innerHTML = `
       <div class="hud-view">
         <div class="boss-bar"><div class="boss-name">THE TROPHY KING</div><div class="boss-hats"></div><div class="boss-tip"></div></div>
         <div class="banner"></div>
-        <div class="hud-tr">
-          <div class="timer">0:00</div>
-          <button class="pause-btn" aria-label="Pause">II</button>
-        </div>
         <div class="stealth"><span class="stealth-label">HIDDEN</span><div class="stealth-bar"><div class="stealth-fill"></div></div></div>
         <canvas class="pings"></canvas>
         <div class="toasts"></div>
@@ -76,6 +72,10 @@ export class Hud {
         <div class="hint"></div>
       </div>
       <div class="hud-panel">
+        <div class="hud-tr">
+          <div class="timer">0:00</div>
+          <button class="pause-btn" aria-label="Pause">II</button>
+        </div>
         <div class="hud-tl">
           <div class="hearts"></div>
           <div class="stamina"><div class="stamina-fill"></div></div>

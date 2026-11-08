@@ -374,15 +374,23 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
   flex-direction: column;
   justify-content: center;
 }
-:root[data-layout='split'] .hud-br { position: static; }
+:root[data-layout='split'] .hud-br { position: static; align-self: flex-end; }
+/* Timer + pause live in the panel's top-right corner in split mode. */
+:root[data-layout='split'] .hud-tr { top: 10px; right: max(14px, env(safe-area-inset-right)); }
+/* Pause menu sits on the bottom half so the paused view stays visible above. */
+:root[data-layout='split'] .screen.pause-screen { top: var(--panel-top); bottom: auto; height: var(--panel-h); padding: 10px 16px max(10px, env(safe-area-inset-bottom)); background: rgba(10, 15, 10, 0.75); }
+:root[data-layout='split'] .pause-screen .title-card { padding: 14px 18px; max-width: 520px; display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; align-items: end; }
+:root[data-layout='split'] .pause-screen .title-card h2, :root[data-layout='split'] .pause-screen .title-card p { grid-column: 1 / -1; margin-bottom: 4px; }
+:root[data-layout='split'] .pause-screen .big-btn { grid-column: 1 / -1; font-size: 22px; padding: 10px; }
 :root[data-layout='split'] .boss-bar { bottom: 12px; }
 :root[data-layout='split'] .hint { bottom: 10px; }
 :root[data-layout='split'] .stealth { top: max(12px, env(safe-area-inset-top)); }
 
 /* Narrow panel (portrait): stats across the top, move area and buttons underneath. */
 @container (max-width: 560px) {
-  :root[data-layout='split'] .hud-tl { position: absolute; width: auto; margin: 0; top: 10px; left: 14px; right: 14px; align-self: auto; display: grid; grid-template-columns: auto 1fr; column-gap: 12px; align-items: center; }
-  :root[data-layout='split'] .hud-tl .objectives, :root[data-layout='split'] .hud-tl .secret-obj { grid-column: 1 / -1; }
+  :root[data-layout='split'] .hud-tl { position: absolute; width: auto; margin: 0; top: 10px; left: 14px; right: 130px; align-self: auto; display: flex; flex-direction: row; flex-wrap: wrap; column-gap: 12px; align-items: center; justify-content: flex-start; }
+  :root[data-layout='split'] .hud-tl .stamina { flex: 1; max-width: 160px; }
+  :root[data-layout='split'] .hud-tl .objectives, :root[data-layout='split'] .hud-tl .secret-obj { flex-basis: 100%; }
   :root[data-layout='split'] .hud-br { position: absolute; right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); }
 }
 /* Short wide panel: shrink the buttons so they fit. */
@@ -397,3 +405,12 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
   :root[data-layout='split'] .pad { --pad-cx: 26%; --pad-cy: 72%; }
   .pad-hint { top: 72%; left: 26%; }
 }
+
+/* ---------- Full layout, portrait (e.g. iPhone Duo outer screen held upright) ---------- */
+:root[data-layout='full'][data-orient='portrait'] .hud-tl { max-width: calc(100% - 190px); }
+:root[data-layout='full'][data-orient='portrait'] .stealth { left: auto; right: max(12px, env(safe-area-inset-right)); top: calc(max(10px, env(safe-area-inset-top)) + 56px); transform: none; }
+:root[data-layout='full'][data-orient='portrait'] .stealth.spotted { animation: none; }
+:root[data-layout='full'][data-orient='portrait'] .banner { top: calc(max(10px, env(safe-area-inset-top)) + 110px); }
+:root[data-layout='full'][data-orient='portrait'] .boss-bar { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 200px); }
+:root[data-layout='full'][data-orient='portrait'] .hint { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 190px); white-space: normal; text-align: center; width: max-content; max-width: 80vw; border-radius: 14px; }
+:root[data-layout='full'][data-orient='portrait'] .toasts { top: 28%; }

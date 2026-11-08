@@ -2,7 +2,8 @@
 //
 // "full":  the 3D view fills the screen and the HUD floats on top (regular phones, unfolded inner screen).
 // "split": the 3D view sits in the top part and the controls plus stats get their own panel below.
-//          Used for the half-folded "laptop" pose (fold runs across the screen) and any portrait viewport.
+//          Used for the half-folded "laptop" pose (fold runs across the screen). Flat portrait screens
+//          (e.g. the iPhone Duo outer screen held upright) stay "full" with a portrait HUD.
 //
 // Fold detection uses the web standards WebKit exposes for foldables when available
 // (Viewport Segments API and Device Posture API) and falls back to the viewport shape.
@@ -21,7 +22,7 @@ export interface Rect {
 export interface Layout {
   mode: LayoutMode;
   /** Why this mode was chosen, for debugging (`?layout-debug`). */
-  reason: 'pref' | 'fold' | 'hinge' | 'posture' | 'portrait' | 'default';
+  reason: 'pref' | 'fold' | 'hinge' | 'posture' | 'default';
   width: number;
   height: number;
   /** Where the 3D view goes. */
@@ -130,19 +131,19 @@ export function computeLayout(): Layout {
   // Posture says half-folded but there are no segments to tell us where: assume the fold is mid-screen.
   // Only for a landscape viewport; a portrait one is handled below anyway.
   if (posture() === 'folded' && w > h) return split('posture', h / 2);
-  if (h > w * 1.05) return split('portrait', defaultSplit());
   return full('default');
 }
 
 function same(a: Layout | null, b: Layout) {
   if (!a) return false;
   const r = (x: Rect | null, y: Rect | null) => (!x && !y) || (!!x && !!y && x.x === y.x && x.y === y.y && x.w === y.w && x.h === y.h);
-  return a.mode === b.mode && a.width === b.width && a.height === b.height && r(a.view, b.view) && r(a.panel, b.panel);
+  return a.mode === b.mode && a.reason === b.reason && a.width === b.width && a.height === b.height && r(a.view, b.view) && r(a.panel, b.panel);
 }
 
 function apply(l: Layout) {
   const root = document.documentElement;
   root.dataset.layout = l.mode;
+  root.dataset.orient = l.width < l.height ? 'portrait' : 'landscape';
   root.style.setProperty('--view-h', `${l.view.h}px`);
   root.style.setProperty('--panel-top', `${l.panel ? l.panel.y : l.height}px`);
   root.style.setProperty('--panel-h', `${l.panel ? l.panel.h : 0}px`);

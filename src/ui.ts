@@ -278,7 +278,7 @@ export class Ui {
         <button class="mid-btn layout">${LAYOUT_LABEL[layoutPref()]}</button>
         <button class="mid-btn quit">Quit to menu</button>
       </div>`,
-      'overlay',
+      'overlay pause-screen',
     );
     this.on('.resume', onResume);
     this.on('.quit', onQuit);

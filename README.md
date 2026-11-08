@@ -94,6 +94,6 @@ Booped hunters drop their hat. Grab it and they go in the **Hunter Log** with we
 `src/layout.ts` picks one of two layouts and resizes the renderer to match:
 
 - **full**: the 3D view fills the screen with the HUD on top (phones in landscape, the unfolded inner screen, the outer screen).
-- **split**: the view on top, a controls + stats panel below. Used in the half-folded "laptop" pose and for any portrait screen. On iOS the fold comes from `UIHingeInteraction` (iOS 27.1+) in `ios/App/App/SceneDelegate.swift`, passed to JS as `window.__huntdeerHinge(status, angle)`, because WKWebView doesn't expose the web Viewport Segments / Device Posture APIs (those are still checked for other browsers).
+- **split**: the view on top, a controls + stats panel (with timer, pause and the pause menu) below. Used in the half-folded "laptop" pose. Flat portrait screens such as the Duo outer screen use **full** with a portrait HUD. On iOS the fold comes from `UIHingeInteraction` (iOS 27.1+) in `ios/App/App/SceneDelegate.swift`, passed to JS as `window.__huntdeerHinge(status, angle)`, because WKWebView doesn't expose the web Viewport Segments / Device Posture APIs (those are still checked for other browsers).
 
 Players can force either from the pause menu ("Screen: ..."). Build the iOS app with Xcode 27.1+ so iOS treats it as Duo-aware.
