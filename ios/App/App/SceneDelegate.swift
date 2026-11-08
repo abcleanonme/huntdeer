@@ -36,7 +36,10 @@ class HuntdeerViewController: CAPBridgeViewController {
         super.viewDidLoad()
         // The page may not be loaded when the first hinge update arrives; resend after each load.
         loadingObservation = webView?.observe(\.isLoading, options: [.new]) { [weak self] wv, _ in
-            if !wv.isLoading { self?.flushHinge() }
+            guard !wv.isLoading, let self else { return }
+            // Regions read before the window was fully on screen can be empty; read them fresh.
+            if #available(iOS 27.1, *) { self.sendReservedRegions() }
+            self.flushHinge()
         }
         if #available(iOS 27.1, *) {
             let interaction = UIHingeInteraction { [weak self] _, update in
@@ -49,6 +52,27 @@ class HuntdeerViewController: CAPBridgeViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         if #available(iOS 27.1, *) { sendReservedRegions() }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        refreshRegionsSoon()
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        refreshRegionsSoon()
+    }
+
+    /// On a cold launch the camera region isn't always reported on the first layout passes, and no
+    /// later layout happens until a rotation. Re-check a few times while the app settles.
+    private func refreshRegionsSoon() {
+        guard #available(iOS 27.1, *) else { return }
+        for delay in [0.0, 0.3, 1.0, 2.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.sendReservedRegions()
+            }
+        }
     }
 
     /// iPhone Duo reserved regions (iOS 27.1+): the outer camera (.occlusion) and the fold (.division).
