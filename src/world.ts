@@ -50,6 +50,8 @@ export class World {
   exitKind: 'gap' | 'cave' | 'temple' | 'beaver' | 'cage' = 'gap';
   /** Where the Trophy King's lodge door is (lodge map only). */
   lodgeDoor = new THREE.Vector3();
+  /** Solid buildings the camera must stay out of: a box in world x/z with a roof height that depends on z. */
+  camBlocks: { x0: number; x1: number; z0: number; z1: number; top: (z: number) => number }[] = [];
   sun: THREE.DirectionalLight;
   hemi: THREE.HemisphereLight;
   private hills: { x: number; z: number; r: number; h: number }[] = [];
@@ -391,6 +393,16 @@ export class World {
     const fp = lodge.userData.footprint as { w: number; d: number };
     lodge.position.set(0, this.height(0, door.z - fp.d / 2), door.z - fp.d / 2);
     this.statics.add(lodge);
+    const roofTop = lodge.userData.roofTop as (z: number) => number;
+    const lz = lodge.position.z;
+    const ly = lodge.position.y;
+    this.camBlocks.push({
+      x0: -fp.w / 2 - 0.6,
+      x1: fp.w / 2 + 0.6,
+      z0: lz - fp.d / 2 - 1.2,
+      z1: lz + fp.d / 2 + 1.2,
+      top: (z) => ly + roofTop(z - lz),
+    });
     // Approximate the cabin walls with a row of circles for collisions and sight.
     for (let x = -fp.w / 2; x <= fp.w / 2; x += 2.5) {
       for (const z of [door.z - fp.d, door.z]) this.colliders.push({ x, z, r: 1.4, blocksSight: true });

@@ -710,6 +710,18 @@ export function buildLodge(): THREE.Group {
     roof.rotation.x = s * 0.55;
     g.add(roof);
   }
+  // Close the triangle under each end of the roof, and put a ceiling on top of the walls,
+  // so nobody can peek inside from up high.
+  const gable = new THREE.Shape();
+  gable.moveTo(-D / 2 - 0.5, 7.4);
+  gable.lineTo(D / 2 + 0.5, 7.4);
+  gable.lineTo(0, 11.2);
+  gable.closePath();
+  for (const s of [-1, 1]) {
+    const geo = new THREE.ShapeGeometry(gable).rotateY((s * Math.PI) / 2);
+    g.add(mesh(geo, 0x6d4c41, s * (W / 2 + 0.3), 0, 0));
+  }
+  g.add(mesh(box(W, 0.3, D), 0x3e2723, 0, 7.6, 0, false));
   // Glowing windows
   const win = new THREE.MeshBasicMaterial({ color: 0xffd180 });
   for (const x of [-7, -3, 3, 7]) {
@@ -729,6 +741,8 @@ export function buildLodge(): THREE.Group {
     g.add(a);
   }
   g.userData.footprint = { w: W + 1, d: D + 1 };
+  // Top of the roof at local z, a little above the shingles, for keeping the camera out.
+  g.userData.roofTop = (z: number) => Math.min(12, 9.8 - (Math.abs(z) - 3) * 0.62);
   return g;
 }
 
@@ -833,11 +847,44 @@ export function buildRock(rng: () => number, snow = false): THREE.Mesh {
   return m;
 }
 
-export function buildFood(color: number): THREE.Group {
+export function buildFood(color: number, shape?: 'bug'): THREE.Group {
+  if (shape === 'bug') return buildBug(color);
   const g = new THREE.Group();
   g.add(mesh(sphere(0.35, 1), color, 0, 0, 0));
   g.add(mesh(box(0.05, 0.2, 0.05), 0x5b3a1a, 0, 0.38, 0));
   g.add(mesh(box(0.18, 0.04, 0.1), 0x3fa34d, 0.1, 0.42, 0));
+  return g;
+}
+
+/** A fat swamp beetle: shiny split shell, little head, six legs, antennae and buzzing wings. Faces +z. */
+function buildBug(color: number): THREE.Group {
+  const g = new THREE.Group();
+  const shell = mesh(sphere(0.3, 1), color, 0, 0, -0.04);
+  shell.scale.set(0.85, 0.6, 1.25);
+  g.add(shell);
+  g.add(mesh(box(0.03, 0.2, 0.72), 0x123f33, 0, 0.12, -0.04, false)); // seam between the wing cases
+  for (const sx of [-1, 1]) g.add(mesh(sphere(0.06, 0), 0xffffff, 0.12 * sx, 0.14, 0.05, false)); // shine
+  g.add(mesh(sphere(0.15, 1), 0x1d1d1d, 0, 0.02, 0.38)); // head
+  for (const sx of [-1, 1]) {
+    g.add(mesh(sphere(0.045, 0), 0xffe082, 0.08 * sx, 0.08, 0.5, false)); // eyes
+    const ant = mesh(box(0.02, 0.02, 0.3), 0x1d1d1d, 0.07 * sx, 0.12, 0.62, false);
+    ant.rotation.set(-0.6, 0.35 * sx, 0);
+    g.add(ant);
+    for (let i = 0; i < 3; i++) {
+      const leg = mesh(box(0.28, 0.03, 0.03), 0x1d1d1d, 0.3 * sx, -0.12, -0.2 + i * 0.2, false);
+      leg.rotation.set(0, (i - 1) * 0.4 * sx, -0.5 * sx);
+      g.add(leg);
+    }
+    const wing = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.28, 0.5),
+      new THREE.MeshBasicMaterial({ color: 0xe0f7fa, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+    );
+    wing.position.set(0.18 * sx, 0.2, -0.15);
+    wing.rotation.set(-Math.PI / 2 + 0.3, 0, 0.5 * sx);
+    wing.name = 'wing';
+    g.add(wing);
+  }
+  g.scale.setScalar(1.15);
   return g;
 }
 

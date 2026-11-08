@@ -92,7 +92,12 @@ export function writeSave(s: SaveData) {
   void nativeSave(KEY, raw);
 }
 
+/** Every star earned, the hidden lodge's included once it has been played. */
 export function totalStars(s: SaveData) {
-  // The hidden lodge doesn't count toward unlocks.
-  return MAPS.filter((m) => !m.hidden).reduce((a, m) => a + (s.stars[m.id] ?? 0), 0);
+  return MAPS.reduce((a, m) => a + (s.stars[m.id] ?? 0), 0);
+}
+
+/** Stars there are to earn: 12 in the four main woods, 15 once the lodge is open. */
+export function maxStars(s: SaveData) {
+  return MAPS.filter((m) => !m.hidden || s.secretsDone.includes('swamp')).length * 3;
 }

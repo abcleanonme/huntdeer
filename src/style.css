@@ -488,3 +488,20 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 :root[data-layout='split'] .screen.overlay .stars { margin: 4px 0 6px; }
 :root[data-layout='split'] .screen.overlay .big-btn { font-size: 20px; padding: 8px; margin-top: 6px; }
 :root[data-layout='split'] .screen.overlay .mid-btn { margin-top: 8px; padding: 8px 12px; }
+
+/* ---------- End credits ---------- */
+.screen.credits-screen { background: rgba(8, 10, 18, 0.92); overflow: hidden; align-items: stretch; }
+.credits { position: relative; width: 100%; height: 100%; overflow: hidden; color: #fff; text-align: center; }
+.cr-roll { position: absolute; left: 50%; width: min(460px, calc(100% - 32px)); transform: translateX(-50%); top: 100%; animation: cr-roll 42s linear forwards; }
+@keyframes cr-roll { to { top: 0; transform: translate(-50%, -100%); } }
+.cr-roll .logo { margin: 0 0 18px; }
+.cr-lead { font-size: 16px; line-height: 1.5; margin: 18px 0 30px; opacity: 0.9; }
+.cr-score { display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: var(--display); font-size: 22px; margin: 10px 0; }
+.cr-score span { font-family: inherit; font-size: 14px; opacity: 0.75; }
+.cr-score.small { font-size: 14px; font-family: inherit; opacity: 0.75; margin-bottom: 34px; }
+.cr-role { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.6; margin-top: 22px; }
+.cr-who { font-family: var(--display); font-size: 22px; margin-top: 2px; }
+.cr-end { font-family: var(--display); font-size: 40px; margin: 60px 0 40vh; }
+.cr-skip { position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); width: auto; padding: 8px 18px; }
+.done-line { background: #ffd54f; color: var(--ink); }
+.log-grid + .more { display: block; margin: 12px auto 0; width: auto; padding: 8px 22px; }

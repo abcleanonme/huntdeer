@@ -440,7 +440,7 @@ export const REGULAR_KINDS: HunterKind[] = ['bow', 'rifle', 'shotgun', 'ebike', 
 export const FIRST_NAMES = [
   'Bob', 'Randy', 'Sheila', 'Brad', 'Gus', 'Carl', 'Tammy', 'Dan', 'Hank', 'Earl', 'Darlene', 'Dwayne', 'Cletus',
   'Barb', 'Lyle', 'Wade', 'Doreen', 'Rusty', 'Bubba', 'Trish', 'Merle', 'Kyle', 'Brenda', 'Chad', 'Vern', 'Jolene',
-  'Buck', 'Skip', 'Peggy', 'Duane', 'Lou', 'Gary', 'Rhonda', 'Clint', 'Bev', 'Hoyt',
+  'Buck', 'Skip', 'Peggy', 'Duane', 'Lou', 'Gary', 'Rhonda', 'Clint', 'Bev', 'Hoyt', 'Chucky',
 ];
 export const NICKNAMES = [
   'Two-Beers', 'Big Gulp', 'The Whisperer', 'No-Scope', 'Old Reliable', 'Sasquatch', 'Mudflap', 'Kodak',
@@ -494,7 +494,8 @@ export interface MapDef {
   bushes: number;
   rocks: number;
   hills: number;
-  food: { name: string; color: number };
+  /** shape 'bug' draws a beetle instead of a round fruit. */
+  food: { name: string; color: number; shape?: 'bug' };
   snow?: boolean;
   water?: boolean;
   night?: boolean;
@@ -640,7 +641,7 @@ export const MAPS: MapDef[] = [
     bushes: 90,
     rocks: 15,
     hills: 2,
-    food: { name: 'bugs', color: 0x9b5de5 },
+    food: { name: 'bugs', color: 0x2e8b6e, shape: 'bug' },
     water: true,
     hunters: { shotgun: 3, rifle: 1, ghillie: 1, ebike: 1, drunk: 1, hound: 1, drone: 1 },
     objectives: [
@@ -715,9 +716,9 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'first_boop', name: 'Boop!', desc: 'Boop your first hunter.' },
   { id: 'hat_trick', name: 'Hat Trick', desc: 'Collect 3 hats in one run.' },
   { id: 'milliner', name: 'Milliner', desc: 'Collect 25 hats in total.' },
-  { id: 'untouched', name: 'Not a Scratch', desc: 'Finish a map without getting hit.' },
-  { id: 'speedy', name: 'Speed Deer', desc: 'Beat any map under par time.' },
-  { id: 'all_stars', name: 'Star Collector', desc: 'Earn all 3 stars on all four main maps.' },
+  { id: 'untouched', name: 'Not a Scratch', desc: 'Finish a woods without getting hit.' },
+  { id: 'speedy', name: 'Speed Deer', desc: 'Beat any woods under par time.' },
+  { id: 'all_stars', name: 'Star Collector', desc: 'Earn all 3 stars in all four main woods.' },
   { id: 'mounted', name: 'Wall Decoration', desc: 'Get mounted 10 times.' },
   { id: 'lucky_duck', name: 'Lucky Duck', desc: 'Survive Soggy Bottom as the duck.' },
   { id: 'golden', name: 'Golden Boy', desc: 'Collect a hat from a golden-vest hunter.' },
