@@ -31,7 +31,8 @@ export interface Layout {
   panel: Rect | null;
 }
 
-const PREF_KEY = 'huntdeer.layout';
+// v2: layouts changed (portrait no longer splits), so earlier test choices start fresh at auto.
+const PREF_KEY = 'huntdeer.layout.v2';
 
 interface ViewportSegments {
   segments?: DOMRect[] | null;

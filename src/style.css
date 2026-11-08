@@ -281,6 +281,8 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 
 .hint { position: absolute; bottom: max(14px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.55); color: #fff; font-family: var(--body); font-weight: 800; font-size: 13px; padding: 6px 12px; border-radius: 99px; white-space: nowrap; transition: opacity 1s; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
 .hint.fade { opacity: 0; }
+/* The boss bar and the controls hint share the lower middle; the boss wins. */
+.boss-bar.on ~ .hint { display: none; }
 
 .hud-br { position: absolute; right: max(14px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; gap: 12px; align-items: end; }
 .act-btn { width: 72px; height: 72px; border-radius: 50%; background: rgba(255, 255, 255, 0.85); border: 3px solid var(--ink); font-size: 14px; box-shadow: 0 4px 0 var(--ink); position: relative; overflow: hidden; color: var(--ink); }
@@ -410,7 +412,8 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 :root[data-layout='full'][data-orient='portrait'] .hud-tl { max-width: calc(100% - 190px); }
 :root[data-layout='full'][data-orient='portrait'] .stealth { left: auto; right: max(12px, env(safe-area-inset-right)); top: calc(max(10px, env(safe-area-inset-top)) + 56px); transform: none; }
 :root[data-layout='full'][data-orient='portrait'] .stealth.spotted { animation: none; }
-:root[data-layout='full'][data-orient='portrait'] .banner { top: calc(max(10px, env(safe-area-inset-top)) + 110px); }
-:root[data-layout='full'][data-orient='portrait'] .boss-bar { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 200px); }
+:root[data-layout='full'][data-orient='portrait'] .banner { top: calc(max(10px, env(safe-area-inset-top)) + 165px); left: 12px; max-width: none; }
+:root[data-layout='full'][data-orient='portrait'] .boss-bar { left: max(12px, env(safe-area-inset-left)); transform: none; text-align: left; max-width: calc(100% - 210px); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 40px); }
+:root[data-layout='full'][data-orient='portrait'] .boss-hats { justify-content: flex-start; }
 :root[data-layout='full'][data-orient='portrait'] .hint { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 190px); white-space: normal; text-align: center; width: max-content; max-width: 80vw; border-radius: 14px; }
-:root[data-layout='full'][data-orient='portrait'] .toasts { top: 28%; }
+:root[data-layout='full'][data-orient='portrait'] .toasts { top: 40%; }
