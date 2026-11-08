@@ -293,7 +293,8 @@ export class Hud {
     ctx.clearRect(0, 0, this.pings.width, this.pings.height);
     this.pingsDrawn = pings.length > 0;
     if (!pings.length) return;
-    const radius = Math.min(v.w, v.h) * 0.36;
+    // Keep the ring clear of the corner HUD clusters.
+    const radius = Math.min(v.w, v.h) * 0.3;
     ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
     ctx.shadowBlur = 3 * dpr;
     for (const p of pings) {

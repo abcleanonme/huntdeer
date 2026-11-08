@@ -127,8 +127,12 @@ export function computeLayout(): Layout {
     return split('fold', segs[0].bottom, gap);
   }
   if (pref === 'split') return split('pref', w > h ? h * 0.55 : defaultSplit());
-  // Half-folded: laptop pose. The fold runs across the middle of the screen as the player holds it.
-  if (hinge?.status === 'partiallyOpen') return split('hinge', h / 2);
+  // Half-folded with the crease running across the screen: split exactly at the crease.
+  const crease = divisions.find((d) => d.w > d.h);
+  if (crease) return split('fold', crease.y, crease.h);
+  // Half-folded without a crease rect: laptop pose, fold assumed across the middle.
+  // (A vertical crease is the book pose; the game stays full there.)
+  if (hinge?.status === 'partiallyOpen' && !divisions.length) return split('hinge', h / 2);
   // Posture says half-folded but there are no segments to tell us where: assume the fold is mid-screen.
   // Only for a landscape viewport; a portrait one is handled below anyway.
   if (posture() === 'folded' && w > h) return split('posture', h / 2);
@@ -198,3 +202,36 @@ export function watchLayout() {
   });
   refreshLayout();
 }
+
+/**
+ * Occluded areas from iOS (iPhone Duo outer camera; UIKit reserved regions), in CSS px of the page.
+ * iOS also reports a whole-edge safe-area inset for that camera (~84px), which pushed the HUD far
+ * from the edge. With the real rects we hug the edges and only step around the camera itself.
+ */
+type Occl = { x: number; y: number; w: number; h: number };
+let occlusions: Occl[] | null = null;
+/** Fold (crease) rects from iOS while half-folded; a horizontal one gives the exact split line. */
+let divisions: Occl[] = [];
+(window as unknown as { __huntdeerRegions: (r: { occlusion: Occl[]; division: Occl[] }) => void }).__huntdeerRegions = (r) => {
+  occlusions = r.occlusion ?? [];
+  divisions = r.division ?? [];
+  applyOcclusions();
+  refreshLayout();
+};
+function applyOcclusions() {
+  const root = document.documentElement;
+  const { w, h } = viewportSize();
+  const cut = { tl: 0, tr: 0, bl: 0, br: 0 };
+  for (const r of occlusions ?? []) {
+    const cx = r.x + r.w / 2;
+    const cy = r.y + r.h / 2;
+    const top = cy < h / 2;
+    const key = `${top ? 't' : 'b'}${cx < w / 2 ? 'l' : 'r'}` as keyof typeof cut;
+    // Clearance from that corner's top/bottom edge to past the camera, plus a small gap.
+    cut[key] = Math.max(cut[key], Math.min(Math.round((top ? r.y + r.h : h - r.y) + 6), Math.round(h * 0.35)));
+  }
+  for (const k of Object.keys(cut) as (keyof typeof cut)[]) root.style.setProperty(`--cut-${k}`, `${cut[k]}px`);
+  if (occlusions) root.dataset.occl = occlusions.length ? 'corner' : 'none';
+  else delete root.dataset.occl;
+}
+onLayout(() => applyOcclusions());

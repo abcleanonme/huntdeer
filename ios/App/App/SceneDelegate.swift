@@ -29,6 +29,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 /// `window.__huntdeerHinge(status, angleRadians)` (see src/layout.ts).
 class HuntdeerViewController: CAPBridgeViewController {
     private var lastHingeJS: String?
+    private var lastRegionsJS: String?
     private var loadingObservation: NSKeyValueObservation?
 
     override func viewDidLoad() {
@@ -43,6 +44,29 @@ class HuntdeerViewController: CAPBridgeViewController {
             }
             view.addInteraction(interaction)
         }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if #available(iOS 27.1, *) { sendReservedRegions() }
+    }
+
+    /// iPhone Duo reserved regions (iOS 27.1+): the outer camera (.occlusion) and the fold (.division).
+    /// UIKit has no change callback for these, so re-query on every layout pass and hinge change and
+    /// only send when something changed. Frames are in this view's points, which match CSS px because
+    /// the web view fills the view.
+    @available(iOS 27.1, *)
+    private func sendReservedRegions() {
+        func list(_ kind: UIView.ReservedRegion.Kind) -> String {
+            view.reservedRegions(kind: kind).map { r in
+                let f = r.frame
+                return "{\"x\":\(Double(f.minX)),\"y\":\(Double(f.minY)),\"w\":\(Double(f.width)),\"h\":\(Double(f.height))}"
+            }.joined(separator: ",")
+        }
+        let js = "window.__huntdeerRegions && window.__huntdeerRegions({\"occlusion\":[\(list(.occlusion))],\"division\":[\(list(.division))]});"
+        guard js != lastRegionsJS else { return }
+        lastRegionsJS = js
+        flushHinge()
     }
 
     @available(iOS 27.1, *)
@@ -61,10 +85,14 @@ class HuntdeerViewController: CAPBridgeViewController {
         let angle = hinge.map { Double($0.angle) } ?? -1
         lastHingeJS = "window.__huntdeerHinge && window.__huntdeerHinge('\(status)', \(angle));"
         flushHinge()
+        // The fold region appears/disappears with the hinge; layout may not run, so check now too.
+        view.setNeedsLayout()
     }
 
+    /// Sends the latest hinge state and reserved regions to the page (again after every page load).
     private func flushHinge() {
-        guard let js = lastHingeJS else { return }
+        let js = [lastHingeJS, lastRegionsJS].compactMap { $0 }.joined(separator: "\n")
+        guard !js.isEmpty else { return }
         DispatchQueue.main.async { [weak self] in
             self?.webView?.evaluateJavaScript(js, completionHandler: nil)
         }
