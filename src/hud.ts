@@ -244,8 +244,10 @@ export class Hud {
     this.abilityBtn.classList.toggle('active', active);
   }
 
-  setBoop(ready: boolean) {
-    this.boopBtn.classList.toggle('ready', ready);
+  /** full: a sneak boop that knocks the hat off. weak: they see you, so it only dazes them. */
+  setBoop(mode: 'full' | 'weak' | 'none') {
+    this.boopBtn.classList.toggle('ready', mode === 'full');
+    this.boopBtn.classList.toggle('weak', mode === 'weak');
   }
 
   /** Hunter's orange: hidden when you have none; full when held; drains while worn. */
@@ -313,12 +315,12 @@ export class Hud {
     ctx.globalAlpha = 1;
   }
 
-  toast(text: string, kind: 'good' | 'bad' | 'info' | 'secret' = 'info') {
+  toast(text: string, kind: 'good' | 'bad' | 'info' | 'secret' = 'info', lifeMs?: number) {
     const el = document.createElement('div');
     el.className = `toast ${kind}`;
     el.textContent = text;
     this.toasts.appendChild(el);
-    const life = kind === 'secret' ? 4200 : 2200;
+    const life = lifeMs ?? (kind === 'secret' ? 4200 : 2200);
     setTimeout(() => el.classList.add('out'), life);
     setTimeout(() => el.remove(), life + 600);
     while (this.toasts.children.length > 3) this.toasts.firstElementChild?.remove();

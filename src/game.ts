@@ -13,6 +13,7 @@ import {
 } from './models';
 import { getLayout } from './layout';
 import { haptic } from './native';
+import { markTip, tipSeen } from './tips';
 import type { HatEntry } from './save';
 import { World } from './world';
 
@@ -855,12 +856,37 @@ export class Game {
       sfx.boop();
       haptic('light');
       this.knockDown(h, 5, 'boop');
+    } else if (this.canDaze(h)) {
+      sfx.boop();
+      haptic('light');
+      this.daze(h);
     } else if (h.state !== 'stunned') {
       h.suspicion = 1;
       h.state = 'alert';
       h.lastSeen.copy(this.player.pos);
-      h.say(h.kind === 'king' ? `Ha! Not while I'm looking, ${critterNoun(this.animal.id)}!` : 'HEY! I see you!');
+      h.say(h.kind === 'king' ? `Ha! Not while I'm looking, ${critterNoun(this.animal.id)}!` : pick(['Not falling for that twice!', 'HEY! I see you!', 'Nice try, {c}.']));
       sfx.alert();
+    }
+  }
+
+  /** A face-boop: hunters who see you coming only get dazed for a moment and keep their hat. */
+  private canDaze(h: Hunter) {
+    return h.kind !== 'king' && h.dazeCd <= 0 && (h.standPhase === 'none' || h.standPhase === 'walk') && h.elev <= 0.5 && h.state !== 'stunned' && h.state !== 'hidden' && h.state !== 'flee';
+  }
+
+  private daze(h: Hunter) {
+    h.chargeTo = null;
+    h.windT = 0;
+    if (h.standPhase === 'walk') h.standPhase = 'none';
+    h.state = 'stunned';
+    h.dazed = true;
+    h.stunT = 1.6;
+    h.aim = 0;
+    h.setMarker('');
+    h.say(pick(['OW! My nose!', 'Rude!', 'Did that {c} just boop me?!', 'HEY! I saw that!']));
+    if (!this.opts.demo && !tipSeen('daze')) {
+      markTip('daze');
+      this.hud.toast('They saw you coming, so they are only dazed. Sneak up from behind to knock their hat off.', 'info', 5200);
     }
   }
 
@@ -910,7 +936,7 @@ export class Game {
   private knockDown(h: Hunter, dur: number, cause: 'boop' | 'roar' | 'charge' | 'trap'): boolean {
     h.chargeTo = null;
     h.windT = 0;
-    if (h.state === 'hidden' || h.state === 'stunned' || h.state === 'flee') return false;
+    if (h.state === 'hidden' || (h.state === 'stunned' && !h.dazed) || h.state === 'flee') return false;
     if (h.standPhase === 'up' && cause !== 'trap') {
       this.knockStand(this.stands[h.standIdx]);
       return true;
@@ -924,6 +950,7 @@ export class Game {
       this.dropOrange(h.pos);
     }
     h.state = 'stunned';
+    h.dazed = false;
     h.stunT = dur;
     h.suspicion = 0;
     h.aim = 0;
@@ -1613,9 +1640,12 @@ export class Game {
       let laserOn = kind === 'ghillie' && !h.oblivious;
       let laserTarget: THREE.Vector3 | null = null;
 
+      if (h.dazeCd > 0) h.dazeCd -= dt;
       if (h.state === 'stunned') {
         h.stunT -= dt;
-        h.rig.body.rotation.z += (Math.PI / 2 - h.rig.body.rotation.z) * Math.min(1, dt * 8);
+        // A daze is a stagger with a wobble; a real boop knocks them flat.
+        const lean = h.dazed ? 0.35 + Math.sin(this.time * 14) * 0.15 : Math.PI / 2;
+        h.rig.body.rotation.z += (lean - h.rig.body.rotation.z) * Math.min(1, dt * 8);
         if (h.stunT <= 0) this.afterStun(h);
       } else if (h.state !== 'sleep') {
         h.rig.body.rotation.z += (0 - h.rig.body.rotation.z) * Math.min(1, dt * 6);
@@ -1918,6 +1948,18 @@ export class Game {
 
   private afterStun(h: Hunter) {
     const p = this.player;
+    if (h.dazed) {
+      // Back on their feet and annoyed; they still know where you are, but need a beat to aim.
+      h.dazed = false;
+      h.dazeCd = 4;
+      h.state = 'alert';
+      h.suspicion = 1;
+      h.lostT = 0;
+      h.lastSeen.copy(p.pos);
+      h.aim = -0.6;
+      h.say(pick(['Where\'d it go?!', 'Oh, it is ON now.', 'My nose!']));
+      return;
+    }
     if (h.kind === 'king') {
       h.state = 'alert';
       h.suspicion = 1;
@@ -2126,7 +2168,8 @@ export class Game {
       this.hud.setFlying(p.flying);
       this.hud.setStick(this.input.stickActive);
       const bt = this.boopTarget();
-      this.hud.setBoop(!!bt && (!!bt.prop || !!bt.stand || this.canBoop(bt.hunter!)));
+      const full = !!bt && (!!bt.prop || !!bt.stand || this.canBoop(bt.hunter!));
+      this.hud.setBoop(full ? 'full' : bt?.hunter && (this.canDaze(bt.hunter) || (bt.hunter.kind === 'king' && bt.hunter.state !== 'stunned')) ? 'weak' : 'none');
       this.hud.setOrange(p.orangeHeld, p.orangeT / ORANGE_TIME);
     }
     this.updateFx(dt);

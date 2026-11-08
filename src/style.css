@@ -56,6 +56,20 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
   z-index: 20;
 }
 .screen.menu { align-items: flex-start; background: rgba(20, 35, 22, 0.35); }
+/* Keep menu content clear of the side insets and the iPhone Duo corner camera (--cut-*). */
+.screen.menu {
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  padding-top: max(16px, env(safe-area-inset-top), var(--cut-tl, 0px), var(--cut-tr, 0px));
+}
+:root[data-occl] .screen.menu { padding-left: 16px; padding-right: 16px; }
+.screen.menu.pick { padding-bottom: 0; }
+.screen.menu.pick .select { margin-bottom: 10px; }
+.howto-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; margin-top: 8px; }
+.howto-sec { background: #fff; border: 3px solid var(--ink); border-radius: 14px; padding: 8px 12px; }
+.howto-sec h3 { font-family: var(--display); font-weight: 400; font-size: 20px; margin: 2px 0 4px; }
+.howto-sec ul { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.4; }
+.howto-sec li { margin: 3px 0; }
 .screen.overlay { background: rgba(10, 15, 10, 0.55); }
 
 .title-card {
@@ -130,7 +144,8 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 .select h2 { font-family: var(--display); font-weight: 400; margin: 6px 0 10px; font-size: 26px; }
 .sel-head { display: flex; justify-content: space-between; align-items: center; }
 .stars-total { font-family: var(--display); font-size: 20px; }
-.row { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 10px; touch-action: pan-x; }
+/* pan-x pan-y: a vertical drag that starts on a card still scrolls the page. */
+.row { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 10px; touch-action: pan-x pan-y; overscroll-behavior-x: contain; }
 .card {
   flex: 0 0 auto;
   width: 132px;
@@ -156,7 +171,7 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 .back-btn { height: 40px; border-radius: 12px; background: #fff; border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink); font-size: 16px; padding: 0 12px 0 10px; flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
 .back-btn:active { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); }
 .chev { width: 10px; height: 10px; border-left: 3px solid var(--ink); border-bottom: 3px solid var(--ink); transform: rotate(45deg); margin-left: 4px; }
-.sel-head h2 { flex: 1; margin-left: 10px; }
+.sel-head h2 { flex: 1; margin-left: 12px; }
 .st { display: inline-block; width: 14px; height: 14px; background: rgba(0, 0, 0, 0.2); clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); vertical-align: -1px; }
 .st.on { background: #f5b700; }
 .st.big { width: 56px; height: 56px; }
@@ -202,6 +217,24 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 .stats, .objlist { margin-top: 6px; font-weight: 800; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip { background: #fff; border: 2px solid var(--ink); border-radius: 99px; padding: 2px 10px; font-size: 12px; font-weight: 800; }
+/* Critter/woods select: the GO! bar sticks to the bottom of the screen so it is always in reach. */
+.sel-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 8px -16px -16px;
+  padding: 8px 16px max(12px, env(safe-area-inset-bottom), var(--cut-bl, 0px), var(--cut-br, 0px));
+  background: var(--panel);
+  border-top: 3px solid var(--ink);
+  border-radius: 0 0 20px 20px;
+  box-shadow: 0 -6px 12px rgba(0, 0, 0, 0.12);
+}
+.sel-summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; }
+.sel-summary .stars-total { font-size: 18px; white-space: nowrap; }
+.sel-foot .sel-actions { margin-top: 2px; }
+.sel-foot .big-btn { margin-top: 6px; }
+.step { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--orange); color: #fff; border: 3px solid var(--ink); font-size: 16px; margin-right: 8px; vertical-align: 3px; -webkit-text-stroke: 0.5px var(--ink); }
+.sel-head h2 .step { vertical-align: 2px; }
 .sel-actions { display: flex; gap: 12px; align-items: flex-end; margin-top: 6px; }
 .sel-actions .mid-btn { flex: 1; }
 .sel-actions .big-btn { flex: 1.4; }
@@ -304,6 +337,8 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 .ability-btn.active { background: #7cf; }
 .boop-btn { grid-column: 1; grid-row: 1; opacity: 0.55; }
 .boop-btn.ready { background: #ff8fd0; opacity: 1; animation: pulse 0.6s infinite; }
+/* They can see you: the boop only dazes them. Lit, but no pulse. */
+.boop-btn.weak { background: #ffd0ea; opacity: 0.95; }
 .jump-btn { grid-column: 1; grid-row: 2; }
 .orange-btn { display: none; position: absolute; right: 0; bottom: calc(100% + 12px); width: 72px; height: 72px; font-size: 13px; background: #fff; }
 .orange-btn span { position: relative; z-index: 1; }
@@ -322,6 +357,28 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 .joy-base { display: none; position: fixed; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); border: 3px solid rgba(255, 255, 255, 0.5); pointer-events: none; z-index: 15; }
 .joy-knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; border-radius: 50%; background: rgba(255, 255, 255, 0.75); border: 3px solid var(--ink); }
 
+@media (max-width: 560px), (max-height: 500px) {
+  .card { width: 108px; padding: 6px 4px; }
+  .card .portrait { width: 62px; height: 62px; }
+  .card.map { width: 124px; }
+  .swatch { height: 50px; }
+  .card .name { font-size: 15px; }
+  .select { padding: 12px; }
+  .sel-foot { margin: 8px -12px -12px; padding-left: 12px; padding-right: 12px; }
+  .select h2 { font-size: 22px; margin: 4px 0 6px; }
+  .star-help { font-size: 12px; }
+  .detail { font-size: 13px; padding: 8px 10px; }
+  .sel-foot .big-btn { font-size: 24px; padding: 10px 16px; }
+  .sel-foot .mid-btn { font-size: 16px; padding: 8px 10px; }
+}
+@media (max-height: 500px) {
+  /* Short landscape screens: the GO! bar is one slim row. */
+  .sel-foot { display: flex; align-items: center; gap: 12px; padding-top: 6px; }
+  .sel-summary { flex: 1; flex-direction: column; align-items: flex-start; gap: 0; }
+  .sel-foot .sel-actions { flex: 1.4; margin: 0; align-items: center; }
+  .sel-foot .big-btn, .sel-foot .mid-btn { margin-top: 0; }
+  .sel-foot .big-btn { font-size: 22px; padding: 8px 14px; }
+}
 @media (max-height: 500px) {
   .objectives { font-size: 11px; padding: 4px 8px; }
   .hearts { font-size: 24px; }

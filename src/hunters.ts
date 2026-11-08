@@ -123,6 +123,10 @@ export class Hunter {
   reload = 0;
   lostT = 0;
   stunT = 0;
+  /** Booped from the front: a short daze, no hat. */
+  dazed = false;
+  /** After a daze the hunter is braced for a while and shrugs off the next face-boop. */
+  dazeCd = 0;
   stinkT = 0;
   searchT = 0;
   hideT = 0;

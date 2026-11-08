@@ -40,6 +40,7 @@ export interface TitleActions {
   log: () => void;
   achievements: () => void;
   caseFile: () => void;
+  howTo: () => void;
 }
 
 export class Ui {
@@ -90,7 +91,10 @@ export class Ui {
           <button class="mid-btn log">Hunter Log <b>${save.hats.length}</b></button>
           <button class="mid-btn ach">Achievements <b>${Object.keys(save.achievements).length}/${ACHIEVEMENTS.length}</b></button>
         </div>
-        ${hasCase ? `<button class="mid-btn case">Case File <b>${save.secretsDone.length + (save.kingDefeated ? 1 : 0)}/5</b></button>` : ''}
+        <div class="title-row">
+          <button class="mid-btn howto">How to Play</button>
+          ${hasCase ? `<button class="mid-btn case">Case File <b>${save.secretsDone.length + (save.kingDefeated ? 1 : 0)}/5</b></button>` : ''}
+        </div>
       </div>`,
       'title',
     );
@@ -98,6 +102,7 @@ export class Ui {
     this.on('.log', act.log);
     this.on('.ach', act.achievements);
     this.on('.case', act.caseFile);
+    this.on('.howto', act.howTo);
   }
 
   select(save: SaveData, onStart: (a: AnimalDef, m: MapDef) => void, onGuide: () => void, onBack: () => void) {
@@ -144,7 +149,7 @@ export class Ui {
 
     this.show(
       `<div class="select">
-        <div class="sel-head"><button class="back-btn back" aria-label="Back"><i class="chev"></i>Back</button><h2>Pick your critter</h2><div class="stars-total"><i class="st on"></i> ${stars} / ${mainMaps.length * 3}</div></div>
+        <div class="sel-head"><button class="back-btn back" aria-label="Back"><i class="chev"></i>Back</button><h2><span class="step">1</span>Pick your critter</h2></div>
         <div class="star-help"><i class="st on"></i><span>Each woods awards up to <b>3 stars</b>: escape, take no hits, and beat the par time. Stars unlock new critters and woods. You have <b>${stars}</b>${nextUnlock(stars)}.</span></div>
         <div class="row">${animalCards}</div>
         <div class="detail">
@@ -152,7 +157,7 @@ export class Ui {
           <span class="ability-name">${a.ability.name}:</span> ${a.ability.desc}
           <div class="stats">Hearts ${a.hearts} · Top speed ${a.runSpeed} · ${vis}</div>
         </div>
-        <h2>Pick your woods</h2>
+        <h2><span class="step">2</span>Pick your woods</h2>
         <div class="row">${mapCards}</div>
         <div class="detail">
           <b>${m.name}</b> <i>${m.blurb}</i><br/>
@@ -160,14 +165,24 @@ export class Ui {
           ${secretLine}
           <div class="chips">${hunters}</div>
         </div>
-        <div class="sel-actions">
-          <button class="mid-btn guide">Field Guide</button>
-          <button class="big-btn go">GO!</button>
+        <div class="sel-foot">
+          <div class="sel-summary"><span><b>${a.name}</b> in <b>${m.name}</b></span><span class="stars-total"><i class="st on"></i> ${stars} / ${mainMaps.length * 3}</span></div>
+          <div class="sel-actions">
+            <button class="mid-btn guide">Field Guide</button>
+            <button class="big-btn go">GO!</button>
+          </div>
         </div>
       </div>`,
-      'menu',
+      'menu pick',
     );
-    const again = () => this.select(save, onStart, onGuide, onBack);
+    const again = () => {
+      // Re-render in place: keep the scroll position and each row's horizontal scroll.
+      const top = this.screen.scrollTop;
+      const rows = [...this.screen.querySelectorAll<HTMLElement>('.row')].map((r) => r.scrollLeft);
+      this.select(save, onStart, onGuide, onBack);
+      this.screen.scrollTop = top;
+      this.screen.querySelectorAll<HTMLElement>('.row').forEach((r, i) => (r.scrollLeft = rows[i] ?? 0));
+    };
     this.on('.card.animal', (el) => {
       this.selAnimal = el.dataset.id!;
       again();
@@ -242,6 +257,21 @@ export class Ui {
       `<div class="select">
         <div class="sel-head"><button class="back-btn back" aria-label="Back"><i class="chev"></i>Back</button><h2>Achievements</h2><div class="stars-total">${Object.keys(save.achievements).length}/${ACHIEVEMENTS.length}</div></div>
         <div class="ach-grid">${cards}</div>
+      </div>`,
+      'menu',
+    );
+    this.on('.back', onBack);
+  }
+
+  howTo(onBack: () => void) {
+    const sec = HOW_TO.map(
+      (x) => `<div class="howto-sec"><h3>${x.title}</h3><ul>${x.items.map((i) => `<li>${i}</li>`).join('')}</ul></div>`,
+    ).join('');
+    this.show(
+      `<div class="select">
+        <div class="sel-head"><button class="back-btn back" aria-label="Back"><i class="chev"></i>Back</button><h2>How to Play</h2></div>
+        <p class="small">You are the hunted. The hunters have orange vests, big egos and terrible eyesight. Use all three against them.</p>
+        <div class="howto-grid">${sec}</div>
       </div>`,
       'menu',
     );
@@ -352,6 +382,55 @@ export class Ui {
     this.on('.menu-btn', onMenu);
   }
 }
+
+const HOW_TO: { title: string; items: string[] }[] = [
+  {
+    title: 'Getting around',
+    items: [
+      'Drag on the left side of the screen to move. Drag on the right side to look around.',
+      'Push the stick all the way to sprint. Sprinting is fast, and also very loud.',
+      'JUMP hops over logs and rocks. Some critters jump higher than others.',
+      'Each critter has its own ability on the big button. It recharges after use.',
+    ],
+  },
+  {
+    title: 'Each woods',
+    items: [
+      'Every woods has two tasks, shown in the top-left. Finish them in order.',
+      'Then find the exit and walk into it. The round only ends when you leave.',
+      'Earn up to 3 stars: escape, take no hits, and beat the par time. Stars unlock new critters and woods.',
+    ],
+  },
+  {
+    title: 'Staying hidden',
+    items: [
+      'The meter at the top shows how close the nearest hunter is to spotting you.',
+      'Bushes hide you, and every bush between you and a hunter helps. Hunters are bad at bushes.',
+      'Hunters can\'t see behind them. Walk, don\'t sprint, when you get close.',
+      'A red laser means somebody is about to fire. Move!',
+      'The deer can smell hunters: arrows around the screen point at them, and turn red when they are onto you.',
+    ],
+  },
+  {
+    title: 'Booping',
+    items: [
+      'Sneak up behind a hunter and press BOOP to knock their hat off. The button pulses pink when a sneak boop will land.',
+      'Napping or stinky hunters can be booped from any side.',
+      'A hunter who sees you coming only gets dazed for a moment and keeps their hat. Then they are mad.',
+      'Grab a dropped hat to add that hunter to your Hunter Log.',
+      'Hunters in tree stands come down the fast way if you boop the stand.',
+    ],
+  },
+  {
+    title: 'Tricks',
+    items: [
+      'Booped hunters sometimes drop a hunter\'s orange vest. Wear it and nobody suspects a fellow hunter, for a while.',
+      'Some hunters scare easily. Boop one and watch them run for the truck.',
+      'The Field Guide on the critter screen lists every kind of hunter and their habits.',
+      'If something in the woods looks out of place, it probably is. Follow it.',
+    ],
+  },
+];
 
 /** ", next unlock at N stars: X" for the select screen. */
 function nextUnlock(stars: number) {
