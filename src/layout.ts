@@ -21,7 +21,7 @@ export interface Rect {
 export interface Layout {
   mode: LayoutMode;
   /** Why this mode was chosen, for debugging (`?layout-debug`). */
-  reason: 'pref' | 'fold' | 'posture' | 'portrait' | 'default';
+  reason: 'pref' | 'fold' | 'hinge' | 'posture' | 'portrait' | 'default';
   width: number;
   height: number;
   /** Where the 3D view goes. */
@@ -49,6 +49,19 @@ function readPref(): LayoutPref {
 }
 
 let pref: LayoutPref = readPref();
+
+/**
+ * Native hinge state from the iOS app (UIHingeInteraction, iOS 27.1+; see SceneDelegate.swift).
+ * WKWebView doesn't expose the web fold APIs, so this is the main signal on the iPhone Duo.
+ */
+let hinge: { status: string; angle: number } | null = null;
+(window as unknown as { __huntdeerHinge: (status: string, angle: number) => void }).__huntdeerHinge = (status, angle) => {
+  hinge = { status, angle };
+  refreshLayout();
+};
+export function hingeState() {
+  return hinge;
+}
 let current: Layout | null = null;
 const listeners = new Set<(l: Layout) => void>();
 
@@ -112,6 +125,8 @@ export function computeLayout(): Layout {
     return split('fold', segs[0].bottom, gap);
   }
   if (pref === 'split') return split('pref', w > h ? h * 0.55 : defaultSplit());
+  // Half-folded: laptop pose. The fold runs across the middle of the screen as the player holds it.
+  if (hinge?.status === 'partiallyOpen') return split('hinge', h / 2);
   // Posture says half-folded but there are no segments to tell us where: assume the fold is mid-screen.
   // Only for a landscape viewport; a portrait one is handled below anyway.
   if (posture() === 'folded' && w > h) return split('posture', h / 2);
