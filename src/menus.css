@@ -145,3 +145,10 @@
   --side-r: 18px;
   --top: max(16px, env(safe-area-inset-top));
 }
+
+/* Laptop pose: the ORANGE button takes the free spot above the ability button, inside the panel
+   (it normally floats above the cluster, which put it over the hinge). */
+:root[data-layout='split'] .hud-panel .hud-br .orange-btn { position: relative; right: auto; bottom: auto; grid-area: 1 / 2; justify-self: center; align-self: end; }
+:root[data-layout='split'] .hud-panel .hud-br .boop-btn { grid-area: 1 / 1; }
+:root[data-layout='split'] .hud-panel .hud-br .jump-btn { grid-area: 2 / 1; }
+:root[data-layout='split'] .hud-panel .hud-br .ability-btn { grid-area: 2 / 2; }
