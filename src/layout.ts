@@ -233,5 +233,11 @@ function applyOcclusions() {
   for (const k of Object.keys(cut) as (keyof typeof cut)[]) root.style.setProperty(`--cut-${k}`, `${cut[k]}px`);
   if (occlusions) root.dataset.occl = occlusions.length ? 'corner' : 'none';
   else delete root.dataset.occl;
+  // Book pose (crease running top to bottom): menus move to one side so nothing sits on the fold.
+  const vCrease = divisions.find((d) => d.h > d.w);
+  if (vCrease) {
+    root.dataset.crease = 'v';
+    root.style.setProperty('--crease-r', `${Math.round(vCrease.x + vCrease.w)}px`);
+  } else delete root.dataset.crease;
 }
 onLayout(() => applyOcclusions());

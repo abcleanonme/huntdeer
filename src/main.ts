@@ -2,6 +2,7 @@ import '@fontsource/lilita-one/latin-400.css';
 import '@fontsource/nunito/latin-600.css';
 import '@fontsource/nunito/latin-800.css';
 import './style.css';
+import './menus.css';
 import * as THREE from 'three';
 import { ANIMALS, LODGE_PAGE, MAPS, type AchievementDef, type AnimalDef, type MapDef } from './data';
 import { Achiever } from './achievements';
