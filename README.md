@@ -25,7 +25,7 @@ npm run ios:sync      # build the web app and copy it into the Xcode project
 npm run ios:open      # open in Xcode, pick your team under Signing, then Run
 ```
 
-- Bundle id `com.abcleanonme.huntdeer`, universal (iPhone + iPad), iOS 15+, landscape only, full screen, status bar hidden.
+- Bundle id `com.abcapps.huntdeer`, universal (iPhone + iPad), iOS 15+, landscape (iPhone also portrait), full screen, status bar hidden.
 - Save data is mirrored to native storage (`@capacitor/preferences`) so iOS can't wipe it; hits and pickups use haptics.
 - Fonts are bundled, so the app works fully offline.
 - `npm run icons` regenerates the app icon and splash from the in-game deer model (needs Playwright).

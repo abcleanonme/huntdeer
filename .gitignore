@@ -6,3 +6,5 @@ dist-single
 # iCloud Drive conflict copies (e.g. "config 2.xml") when the repo lives in ~/Documents
 * 2.*
 * 2
+# iCloud-excluded node_modules (node_modules -> node_modules.nosync symlink)
+*.nosync
