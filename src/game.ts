@@ -2124,6 +2124,7 @@ export class Game {
       this.hud.setTime(this.time);
       this.hud.setAbility(p.abilityCd / this.animal.ability.cooldown, p.abilityT > 0);
       this.hud.setFlying(p.flying);
+      this.hud.setStick(this.input.stickActive);
       const bt = this.boopTarget();
       this.hud.setBoop(!!bt && (!!bt.prop || !!bt.stand || this.canBoop(bt.hunter!)));
       this.hud.setOrange(p.orangeHeld, p.orangeT / ORANGE_TIME);

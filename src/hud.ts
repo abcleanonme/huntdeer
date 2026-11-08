@@ -70,6 +70,7 @@ export class Hud {
         <div class="toasts"></div>
         <div class="flash"></div>
         <div class="hint"></div>
+        <div class="move-hint">drag here<br>to move</div>
       </div>
       <div class="hud-panel">
         <div class="hud-tr">
@@ -136,6 +137,7 @@ export class Hud {
       this.hint.textContent = 'WASD move · Shift sprint · Space jump · E ability · F boop · R wear orange · Mouse look · Esc pause';
       setTimeout(() => this.hint.classList.add('fade'), 9000);
     } else {
+      r.classList.add('touch');
       this.hint.textContent = getLayout().mode === 'split' ? 'Bottom left: move (push far to sprint) · Drag the view: look' : 'Left side: move (push far to sprint) · Right side: look';
       setTimeout(() => this.hint.classList.add('fade'), 7000);
     }
@@ -256,6 +258,11 @@ export class Hud {
     this.orangeBtn.classList.toggle('ready', held && wornFrac <= 0);
     this.orangeBtn.classList.toggle('active', wornFrac > 0);
     this.orangeFill.style.height = `${(wornFrac > 0 ? wornFrac : 1) * 100}%`;
+  }
+
+  /** Hide the move-stick marker while the joystick is in use. */
+  setStick(on: boolean) {
+    this.root.classList.toggle('stick-on', on);
   }
 
   setFlying(f: boolean) {

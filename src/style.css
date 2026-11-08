@@ -409,11 +409,56 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 }
 
 /* ---------- Full layout, portrait (e.g. iPhone Duo outer screen held upright) ---------- */
-:root[data-layout='full'][data-orient='portrait'] .hud-tl { max-width: calc(100% - 190px); }
-:root[data-layout='full'][data-orient='portrait'] .stealth { left: auto; right: max(12px, env(safe-area-inset-right)); top: calc(max(10px, env(safe-area-inset-top)) + 56px); transform: none; }
+/* On the Duo outer screen iOS reports a large right safe-area inset (~84px) in portrait, which pushed
+   everything on the right far from the edge. Portrait phones only need a small corner margin on the
+   sides, so cap the side insets here. */
+:root[data-layout='full'][data-orient='portrait'] {
+  --side-l: min(max(12px, env(safe-area-inset-left)), 20px);
+  --side-r: min(max(12px, env(safe-area-inset-right)), 20px);
+  --top: max(10px, env(safe-area-inset-top));
+  --bottom: max(14px, env(safe-area-inset-bottom));
+}
+:root[data-layout='full'][data-orient='portrait'] .hud-tl { left: var(--side-l); top: var(--top); max-width: calc(100% - 190px); }
+:root[data-layout='full'][data-orient='portrait'] .hearts { font-size: 22px; letter-spacing: 1px; }
+:root[data-layout='full'][data-orient='portrait'] .stamina { width: 96px; height: 7px; }
+:root[data-layout='full'][data-orient='portrait'] .objectives,
+:root[data-layout='full'][data-orient='portrait'] .secret-obj { font-size: 11px; line-height: 1.25; padding: 3px 7px; border-width: 2px; border-radius: 9px; margin-top: 4px; }
+:root[data-layout='full'][data-orient='portrait'] .obj .tick { width: 8px; height: 8px; margin-right: 4px; }
+:root[data-layout='full'][data-orient='portrait'] .hud-tr { right: var(--side-r); top: var(--top); gap: 8px; }
+:root[data-layout='full'][data-orient='portrait'] .timer { font-size: 20px; }
+:root[data-layout='full'][data-orient='portrait'] .pause-btn { width: 38px; height: 38px; font-size: 15px; }
+:root[data-layout='full'][data-orient='portrait'] .stealth { left: auto; right: var(--side-r); top: calc(var(--top) + 48px); transform: none; font-size: 14px; }
+:root[data-layout='full'][data-orient='portrait'] .stealth-bar { width: 120px; height: 9px; }
 :root[data-layout='full'][data-orient='portrait'] .stealth.spotted { animation: none; }
-:root[data-layout='full'][data-orient='portrait'] .banner { top: calc(max(10px, env(safe-area-inset-top)) + 165px); left: 12px; max-width: none; }
-:root[data-layout='full'][data-orient='portrait'] .boss-bar { left: max(12px, env(safe-area-inset-left)); transform: none; text-align: left; max-width: calc(100% - 210px); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 40px); }
+:root[data-layout='full'][data-orient='portrait'] .banner { top: calc(var(--top) + 150px); left: var(--side-l); right: var(--side-r); max-width: none; }
+:root[data-layout='full'][data-orient='portrait'] .boss-bar { left: var(--side-l); transform: none; text-align: left; max-width: calc(100% - 200px); bottom: calc(var(--bottom) + 30px); }
 :root[data-layout='full'][data-orient='portrait'] .boss-hats { justify-content: flex-start; }
-:root[data-layout='full'][data-orient='portrait'] .hint { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 190px); white-space: normal; text-align: center; width: max-content; max-width: 80vw; border-radius: 14px; }
-:root[data-layout='full'][data-orient='portrait'] .toasts { top: 40%; }
+:root[data-layout='full'][data-orient='portrait'] .hint { bottom: calc(var(--bottom) + 170px); white-space: normal; text-align: center; width: max-content; max-width: 80vw; border-radius: 14px; }
+:root[data-layout='full'][data-orient='portrait'] .toasts { top: 38%; }
+/* Buttons: one tight cluster in the bottom-right corner. */
+:root[data-layout='full'][data-orient='portrait'] .hud-br { right: var(--side-r); bottom: var(--bottom); gap: 8px; }
+:root[data-layout='full'][data-orient='portrait'] .act-btn { width: 60px; height: 60px; font-size: 12px; }
+:root[data-layout='full'][data-orient='portrait'] .ability-btn { width: 84px; height: 84px; font-size: 12px; }
+:root[data-layout='full'][data-orient='portrait'] .orange-btn { width: 60px; height: 60px; font-size: 11px; }
+/* Faint move-stick marker bottom-left so it's clear where to drag. */
+.move-hint { display: none; }
+:root[data-layout='full'][data-orient='portrait'][data-playing] .hud.touch .move-hint {
+  display: flex;
+  position: absolute;
+  left: calc(var(--side-l) + 8px);
+  bottom: calc(var(--bottom) + 8px);
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 3px dashed rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.75);
+  font-family: var(--display);
+  font-size: 13px;
+  text-align: center;
+  align-items: center;
+  justify-content: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.2s;
+}
+:root[data-layout='full'][data-orient='portrait'][data-playing] .hud.touch.stick-on .move-hint { opacity: 0; }

@@ -19,6 +19,10 @@ export class Input {
   private joyBase: HTMLDivElement;
   private joyKnob: HTMLDivElement;
   enabled = false;
+  /** True while a finger is on the move stick. */
+  get stickActive() {
+    return this.joyId !== null;
+  }
 
   constructor(el: HTMLElement) {
     this.isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
