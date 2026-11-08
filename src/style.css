@@ -239,6 +239,18 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 .stamina { width: 130px; height: 9px; background: rgba(0, 0, 0, 0.35); border: 2px solid var(--ink); border-radius: 99px; overflow: hidden; margin-top: 2px; }
 .stamina-fill { height: 100%; background: #5fd4ff; }
 .stamina-fill.winded { background: #ff8a3d; }
+.stamina { position: relative; transition: transform 0.15s, box-shadow 0.15s; transform-origin: left center; }
+/* Running: the energy bar swells, glows and gets moving stripes so you can see you're burning it. */
+.stamina.running { transform: scaleY(1.45); box-shadow: 0 0 0 2px #ffd23f, 0 0 10px 2px rgba(255, 210, 63, 0.85); }
+.stamina.running .stamina-fill {
+  background: repeating-linear-gradient(115deg, #ffe066 0 8px, #ffb703 8px 16px);
+  background-size: 32px 100%;
+  animation: run-stripes 0.35s linear infinite;
+}
+.stamina.running.low { animation: run-low 0.3s ease-in-out infinite alternate; }
+.stamina.running.low .stamina-fill { background: repeating-linear-gradient(115deg, #ff9f43 0 8px, #ff6b2b 8px 16px); background-size: 32px 100%; }
+@keyframes run-stripes { to { background-position: 32px 0; } }
+@keyframes run-low { to { box-shadow: 0 0 0 2px #ff6b2b, 0 0 14px 4px rgba(255, 107, 43, 0.9); } }
 .heart.empty { color: rgba(255, 255, 255, 0.35); }
 .objectives { margin-top: 6px; background: rgba(255, 248, 231, 0.88); border: 3px solid var(--ink); border-radius: 14px; padding: 6px 10px; font-family: var(--body); font-weight: 800; font-size: 13px; }
 .obj .tick { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--ink); border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
@@ -321,6 +333,12 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 
 .joy-base { display: none; position: fixed; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); border: 3px solid rgba(255, 255, 255, 0.5); pointer-events: none; z-index: 15; }
 .joy-knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; border-radius: 50%; background: rgba(255, 255, 255, 0.75); border: 3px solid var(--ink); }
+/* Run zone: a dashed ring near the edge of the stick; push the knob into it to run. */
+.joy-zone { position: absolute; inset: 4px; border-radius: 50%; border: 2px dashed rgba(255, 255, 255, 0.35); pointer-events: none; }
+.joy-base.run { border-color: #ffd23f; background: rgba(255, 210, 63, 0.22); box-shadow: 0 0 14px rgba(255, 210, 63, 0.8); }
+.joy-base.run .joy-zone { border-color: #ffd23f; border-style: solid; }
+.joy-base.run .joy-knob { background: #ffd23f; }
+.joy-base.run .joy-knob::after { content: 'RUN'; position: absolute; inset: 0; display: grid; place-items: center; font: 14px var(--display); color: var(--ink); }
 
 @media (max-height: 500px) {
   .objectives { font-size: 11px; padding: 4px 8px; }

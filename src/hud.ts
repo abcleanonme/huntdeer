@@ -158,9 +158,12 @@ export class Hud {
     this.hearts.innerHTML = Array.from({ length: max }, (_, i) => `<span class="heart ${i < have ? '' : 'empty'}">♥</span>`).join('');
   }
 
-  setStamina(v: number, winded: boolean) {
+  setStamina(v: number, winded: boolean, running = false) {
     this.staminaFill.style.width = `${v * 100}%`;
     this.staminaFill.classList.toggle('winded', winded);
+    const bar = this.staminaFill.parentElement!;
+    bar.classList.toggle('running', running);
+    bar.classList.toggle('low', running && v < 0.3);
   }
 
   setObjectives(list: ObjectiveView[]) {
