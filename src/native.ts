@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { Preferences } from '@capacitor/preferences';
 import { StatusBar } from '@capacitor/status-bar';
+import { vibrationOn } from './settings';
 
 export const isNative = Capacitor.isNativePlatform();
 
@@ -15,12 +16,12 @@ export async function initNative() {
   }
 }
 
-export function haptic(kind: 'light' | 'heavy' | 'success' | 'warning') {
-  if (!isNative) return;
+export function haptic(kind: 'light' | 'medium' | 'heavy' | 'success' | 'warning') {
+  if (!isNative || !vibrationOn()) return;
   if (kind === 'success' || kind === 'warning') {
     void Haptics.notification({ type: kind === 'success' ? NotificationType.Success : NotificationType.Warning }).catch(() => {});
   } else {
-    void Haptics.impact({ style: kind === 'heavy' ? ImpactStyle.Heavy : ImpactStyle.Light }).catch(() => {});
+    void Haptics.impact({ style: kind === 'heavy' ? ImpactStyle.Heavy : kind === 'medium' ? ImpactStyle.Medium : ImpactStyle.Light }).catch(() => {});
   }
 }
 

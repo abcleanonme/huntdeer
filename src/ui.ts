@@ -6,6 +6,8 @@ import {
 import type { GameResult } from './game';
 import { muted, sfx, toggleMute, unlockAudio } from './audio';
 import { formatHeight, PERSONALITY_LABEL, type Personality } from './hunters';
+import { isNative } from './native';
+import { cameraMode, toggleCameraMode, toggleVibration, vibrationOn } from './settings';
 import { getLayout, layoutPref, setLayoutPref, type LayoutPref } from './layout';
 import type { HunterLook } from './models';
 import { animalPortrait, hunterPortrait, lockedPortrait } from './portraits';
@@ -16,6 +18,8 @@ const LAYOUT_LABEL: Record<LayoutPref, string> = {
   split: 'Screen: always split',
   full: 'Screen: always full',
 };
+const camLabel = () => (cameraMode() === 'follow' ? 'Camera: follow' : 'Camera: classic');
+const vibeLabel = () => (vibrationOn() ? 'Vibration: on' : 'Vibration: off');
 /** "auto" also says what it picked right now, so on the outer screen it reads "auto (full)". */
 const layoutLabel = () => {
   const p = layoutPref();
@@ -282,6 +286,8 @@ export class Ui {
         <button class="big-btn resume">Resume</button>
         <button class="mid-btn mute">${muted ? 'Sound: off' : 'Sound: on'}</button>
         <button class="mid-btn layout">${layoutLabel()}</button>
+        <button class="mid-btn cam">${camLabel()}</button>
+        ${isNative ? `<button class="mid-btn vibe">${vibeLabel()}</button>` : ''}
         <button class="mid-btn quit">Quit to menu</button>
       </div>`,
       'overlay pause-screen',
@@ -296,6 +302,14 @@ export class Ui {
       const next = order[(order.indexOf(layoutPref()) + 1) % order.length];
       setLayoutPref(next);
       el.textContent = layoutLabel();
+    });
+    this.on('.cam', (el) => {
+      toggleCameraMode();
+      el.textContent = camLabel();
+    });
+    this.on('.vibe', (el) => {
+      toggleVibration();
+      el.textContent = vibeLabel();
     });
   }
 

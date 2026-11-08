@@ -31,6 +31,10 @@ export class Input {
     this.joyBase.className = 'joy-base';
     this.joyKnob = document.createElement('div');
     this.joyKnob.className = 'joy-knob';
+    // Run zone ring sits under the knob.
+    const zone = document.createElement('div');
+    zone.className = 'joy-zone';
+    this.joyBase.appendChild(zone);
     this.joyBase.appendChild(this.joyKnob);
     document.body.appendChild(this.joyBase);
 
@@ -166,6 +170,8 @@ export class Input {
     this.moveX = x;
     this.moveY = y;
     this.sprint = this.pressed.has('ShiftLeft') || this.pressed.has('ShiftRight') || joyLen > 0.9;
+    // Stick pushed into the run zone: the ring lights up.
+    this.joyBase.classList.toggle('run', joyLen > 0.9);
   }
 
   endFrame() {

@@ -13,6 +13,7 @@ import {
 } from './models';
 import { getLayout } from './layout';
 import { haptic } from './native';
+import { cameraMode } from './settings';
 import type { HatEntry } from './save';
 import { World } from './world';
 
@@ -56,6 +57,8 @@ const critterNoun = (id: AnimalDef['id']) => ({ deer: 'deer', rabbit: 'rabbit', 
 const UP = new THREE.Vector3(0, 1, 0);
 /** Seconds a hunter's orange disguise lasts. */
 const ORANGE_TIME = 22;
+
+const DUST_GEO = new THREE.SphereGeometry(0.18, 6, 4);
 
 interface Fx {
   obj: THREE.Object3D;
@@ -162,6 +165,14 @@ export class Game {
   hitsTaken = 0;
   camYaw = 0;
   camPitch = 0.38;
+  /** Follow camera: current swing speed (rad/s) and time since the player last dragged the view. */
+  private camYawVel = 0;
+  private lookIdle = 10;
+  private baseFov = 60;
+  private runFov = 0;
+  private wasSprinting = false;
+  private runTick = 0;
+  private dustT = 0;
   camDist: number;
   shake = 0;
   paused = false;
@@ -483,7 +494,8 @@ export class Game {
     const v = getLayout().view;
     const aspect = v.w / Math.max(1, v.h);
     this.camera.aspect = aspect;
-    this.camera.fov = fitFov(aspect);
+    this.baseFov = fitFov(aspect);
+    this.camera.fov = this.baseFov + this.runFov;
     this.camera.updateProjectionMatrix();
   }
 
@@ -1068,11 +1080,13 @@ export class Game {
         p.stamina = 0;
         p.winded = true;
         this.hud.toast('*wheeze* Out of breath!', 'bad');
+        haptic('warning');
       }
     } else {
       p.stamina = Math.min(1, p.stamina + dt / (a.stamina * 1.4));
       if (p.winded && p.stamina > 0.35) p.winded = false;
     }
+    this.sprintFeedback(dt);
     let speed = (p.sprinting ? a.runSpeed : a.walkSpeed) * (inp.isTouch && !p.sprinting ? Math.max(0.4, mag) : 1);
     if (w.inWater(p.pos.x, p.pos.z) && !p.flying) speed *= a.id === 'duck' ? 1.3 : 0.55;
     if (a.id === 'rabbit' && p.abilityT > 0) speed *= 2;
@@ -2024,13 +2038,82 @@ export class Game {
     this.clouds = this.clouds.filter((c) => c.life > 0);
   }
 
+  /** Running feedback: a thump when you break into a run, light footfall taps while running, dust and a wider view. */
+  private sprintFeedback(dt: number) {
+    const p = this.player;
+    const running = p.sprinting && !this.demo;
+    if (running && !this.wasSprinting) {
+      haptic('medium');
+      this.runTick = 0.42;
+    } else if (running) {
+      this.runTick -= dt;
+      if (this.runTick <= 0) {
+        // Taps get quicker as the energy runs low.
+        this.runTick = p.stamina < 0.3 ? 0.26 : 0.42;
+        if (p.onGround) haptic('light');
+      }
+    }
+    this.wasSprinting = running;
+    if (running && p.onGround) {
+      this.dustT -= dt;
+      if (this.dustT <= 0) {
+        this.dustT = 0.09;
+        this.dustPuff();
+      }
+    }
+  }
+
+  private dustPuff() {
+    const p = this.player;
+    const back = new THREE.Vector3(-Math.sin(p.yaw), 0, -Math.cos(p.yaw)).multiplyScalar(p.radius * 0.9);
+    const m = new THREE.Mesh(DUST_GEO, new THREE.MeshBasicMaterial({ color: this.map.id === 'arctic' ? 0xffffff : 0xd8c6a0, transparent: true, opacity: 0.55, depthWrite: false }));
+    m.position.copy(p.pos).add(back).add(new THREE.Vector3((Math.random() - 0.5) * p.radius, 0.12, (Math.random() - 0.5) * p.radius));
+    this.addFx(m, 0.5, (fx, d) => {
+      const k = 1 - fx.life / fx.max;
+      fx.obj.position.y += d * 0.8;
+      fx.obj.scale.setScalar(1 + k * 2.2);
+      const mt = (fx.obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
+      mt.opacity = 0.55 * (1 - k);
+      if (fx.life <= 0) mt.dispose();
+    });
+  }
+
   private updateCamera(dt: number) {
     const inp = this.input;
+    const p = this.player;
     if (!this.demo) {
       this.camYaw -= inp.lookDX * 0.005;
       this.camPitch = Math.max(0.05, Math.min(1.25, this.camPitch + inp.lookDY * 0.004));
     }
-    const p = this.player;
+    // Follow camera: while you move, the view eases round behind the way you're heading. Dragging the view
+    // pauses it for a moment, so looking around and fine adjustments still work. Running straight at the
+    // camera doesn't flip it; it only swings for sideways-ish movement.
+    if (Math.abs(inp.lookDX) + Math.abs(inp.lookDY) > 1.5) this.lookIdle = 0;
+    else this.lookIdle += dt;
+    let wantVel = 0;
+    if (cameraMode() === 'follow' && !this.demo && !this.ended && p.moving && p.speed > 0) {
+      let diff = p.yaw + Math.PI - this.camYaw;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      const ad = Math.abs(diff);
+      const facing = ad < 2.3 ? 1 : Math.max(0, (Math.PI - ad) / (Math.PI - 2.3));
+      const ramp = Math.min(1, Math.max(0, (this.lookIdle - 0.5) / 1));
+      const pace = Math.min(1, 0.35 + (0.65 * p.speed) / Math.max(1, this.animal.runSpeed));
+      const maxRate = 1.7 * pace;
+      wantVel = Math.max(-maxRate, Math.min(maxRate, diff * 2.4)) * facing * ramp;
+      // Drift the pitch back to the usual angle once you've stopped fiddling with it.
+      if (this.lookIdle > 2) this.camPitch += (0.38 - this.camPitch) * Math.min(1, dt * 0.6);
+    }
+    // Ease the swing speed itself so the camera never snaps into or out of following.
+    this.camYawVel += (wantVel - this.camYawVel) * Math.min(1, dt * 5);
+    this.camYaw += this.camYawVel * dt;
+    // Running widens the view a touch, so you can feel the speed.
+    const fovWant = p.sprinting && !this.demo ? 7 : 0;
+    const nf = this.runFov + (fovWant - this.runFov) * Math.min(1, dt * 5);
+    if (Math.abs(nf - this.runFov) > 0.01) {
+      this.runFov = nf;
+      this.camera.fov = this.baseFov + nf;
+      this.camera.updateProjectionMatrix();
+    }
     const want = p.pos.clone().add(new THREE.Vector3(0, p.rig.height * 0.75, 0));
     this.camTarget.lerp(want, Math.min(1, dt * 10));
     if (this.time < 0.1) this.camTarget.copy(want);
@@ -2121,7 +2204,7 @@ export class Game {
       this.updateSky();
       const p = this.player;
       this.hud.setHearts(p.hearts, this.animal.hearts);
-      this.hud.setStamina(p.stamina, p.winded);
+      this.hud.setStamina(p.stamina, p.winded, p.sprinting);
       this.hud.setTime(this.time);
       this.hud.setAbility(p.abilityCd / this.animal.ability.cooldown, p.abilityT > 0);
       this.hud.setFlying(p.flying);
