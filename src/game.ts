@@ -1087,7 +1087,8 @@ export class Game {
       dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       p.yaw += dy * Math.min(1, dt * 12);
     }
-    w.resolve(p.pos, p.radius, this.exitOpen);
+    // Feet height lets a jump carry the critter over low rocks and logs instead of bumping into them.
+    w.resolve(p.pos, p.radius, this.exitOpen, p.flying ? Infinity : p.pos.y);
 
     if (charging) {
       for (const h of this.hunters) {
@@ -1097,7 +1098,7 @@ export class Game {
       }
     }
 
-    const ground = w.height(p.pos.x, p.pos.z);
+    const ground = p.flying ? w.height(p.pos.x, p.pos.z) : w.supportAt(p.pos.x, p.pos.z, p.radius, p.pos.y);
     if (p.flying) {
       const targetY = ground + 11;
       p.pos.y += (targetY - p.pos.y) * Math.min(1, dt * 3);

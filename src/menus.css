@@ -87,3 +87,61 @@
 /* The title's Credits button shares a class name with the credits screen; keep it a normal button. */
 .mid-btn.credits { position: static; width: 100%; height: auto; overflow: visible; color: var(--ink); text-align: center; }
 .title-row .mid-btn.credits { flex: 1; }
+
+/* ---------- Critter/woods pick: the GO! bar sits on the very bottom edge ---------- */
+/* Fixed to the window's bottom edge, which is also the bottom of the panel in the laptop pose.
+   Sticky stopped short of the edge on iOS (WebKit takes the scroller's padding off). */
+.screen.menu.pick { --pick-l: max(16px, env(safe-area-inset-left)); --pick-r: max(16px, env(safe-area-inset-right)); }
+:root[data-occl] .screen.menu.pick { --pick-l: 16px; --pick-r: 16px; }
+.screen.menu.pick,
+:root[data-layout] .screen.menu.pick { padding-bottom: 0; }
+.screen.menu.pick .select { margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom-width: 0; box-shadow: none; padding-bottom: calc(var(--foot-h, 110px) + 8px); }
+.screen.menu.pick .sel-foot {
+  position: fixed;
+  z-index: 3;
+  bottom: 0;
+  left: max(var(--pick-l), calc((100% - 820px) / 2));
+  right: max(var(--pick-r), calc((100% - 820px) / 2));
+  margin: 0;
+  background: #fff8e7;
+  border: 4px solid var(--ink);
+  border-bottom: 0;
+  border-radius: 0;
+  /* Home indicator only; a bottom-corner camera is stepped around sideways instead (below). */
+  padding-top: 8px;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  padding-left: max(12px, calc(var(--cutx-bl, 0px) - var(--pick-l)));
+  padding-right: max(12px, calc(var(--cutx-br, 0px) - var(--pick-r)));
+}
+:root[data-occl] .screen.menu.pick .sel-foot { padding-bottom: 8px; }
+/* Fixed is relative to the whole window, so in the book pose shift the bar onto the right-hand page too. */
+:root[data-crease='v'] .screen.menu.pick .sel-foot {
+  left: calc(var(--crease-r) + max(var(--pick-l), calc((100% - var(--crease-r) - 820px) / 2)));
+  right: max(var(--pick-r), calc((100% - var(--crease-r) - 820px) / 2));
+}
+
+/* ---------- Back button never touches the title or the first row below it ---------- */
+.sel-head { gap: 12px; margin-bottom: 8px; }
+.select .sel-head h2 { margin-left: 0; margin-right: 0; min-width: 0; }
+
+/* ---------- HUD hearts stay in a tight row ---------- */
+/* A lost heart has class "empty", which also matched the menus' big padded ".empty" message box. */
+.hearts .heart.empty { padding: 0; opacity: 1; font-weight: inherit; text-align: inherit; }
+
+/* ---------- Laptop pose HUD: HIDDEN meter in the panel, buttons up off the bottom corner ---------- */
+:root[data-layout='split'] .hud-panel .stealth { position: absolute; top: 12px; left: 50%; right: auto; transform: translateX(-50%); font-size: 15px; }
+:root[data-layout='split'] .hud-panel .stealth-bar { width: 140px; height: 10px; }
+:root[data-layout='split'] .hud-panel .hud-br { align-self: center; }
+@container (max-width: 560px) {
+  /* Narrow panel: stats fill the top-left, so the meter sits under the timer. */
+  :root[data-layout='split'] .hud-panel .stealth { top: 58px; left: auto; right: max(14px, env(safe-area-inset-right)); transform: none; }
+  :root[data-layout='split'] .hud-panel .stealth-bar { width: 110px; }
+  :root[data-layout='split'] .hud-panel .hud-br { bottom: max(44px, calc(env(safe-area-inset-bottom) + 24px)); }
+}
+
+/* ---------- Outer screen upright: a few px more room from the rounded edges ---------- */
+:root[data-layout='full'][data-orient='portrait'][data-occl] {
+  --side-l: 18px;
+  --side-r: 18px;
+  --top: max(16px, env(safe-area-inset-top));
+}

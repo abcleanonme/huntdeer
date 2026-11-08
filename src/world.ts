@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MapDef } from './data';
-import { buildBush, buildDecorations, buildExitLandmark, buildLantern, buildLodge, buildRock, buildTree, mat } from './models';
+import { buildBush, buildDecorations, buildExitLandmark, buildLantern, buildLodge, buildLog, buildRock, buildTree, mat } from './models';
 
 export function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -23,6 +23,8 @@ export interface Collider {
   blocksSight: boolean;
   /** Radius that blocks sight, when wider than the solid part (a pine's branches are wider than its trunk). */
   sightR?: number;
+  /** World height of the top for low things (rocks, logs) a critter can jump over or stand on. */
+  top?: number;
 }
 
 export interface Pond {
@@ -218,9 +220,22 @@ export class World {
     return false;
   }
 
-  /** Push a circle out of colliders and keep it inside the fence. */
-  resolve(pos: THREE.Vector3, radius: number, allowExit = false) {
+  /** Ground under a critter: the terrain, or the top of a low rock or log it has landed on. */
+  supportAt(x: number, z: number, radius: number, feetY: number) {
+    let g = this.height(x, z);
     for (const c of this.colliders) {
+      if (c.top === undefined || c.top <= g || feetY < c.top - 0.35) continue;
+      const reach = c.r + radius * 0.4;
+      if ((x - c.x) ** 2 + (z - c.z) ** 2 < reach * reach) g = c.top;
+    }
+    return g;
+  }
+
+  /** Push a circle out of colliders and keep it inside the fence. */
+  resolve(pos: THREE.Vector3, radius: number, allowExit = false, feetY?: number) {
+    for (const c of this.colliders) {
+      // Jumped high enough to pass over it.
+      if (feetY !== undefined && c.top !== undefined && feetY >= c.top - 0.05) continue;
       const dx = pos.x - c.x;
       const dz = pos.z - c.z;
       const min = c.r + radius;
@@ -470,9 +485,10 @@ export class World {
       const rock = buildRock(rng, def.snow);
       const r = rock.userData.radius as number;
       if (!isClear(p.x, p.z, r)) continue;
-      rock.position.set(p.x, this.height(p.x, p.z), p.z);
+      const gy = this.height(p.x, p.z);
+      rock.position.set(p.x, gy, p.z);
       this.statics.add(rock);
-      this.colliders.push({ x: p.x, z: p.z, r, blocksSight: r > 1.2 });
+      this.colliders.push({ x: p.x, z: p.z, r, blocksSight: r > 1.2, top: gy + (rock.userData.top as number) });
     }
     // Hunting decor: tree stands and trucks. Trucks are where scared hunters run home to.
     const truckSpots = [
@@ -517,6 +533,34 @@ export class World {
       const p = this.randomPoint(12);
       if (!isClear(p.x, p.z, 2.8)) continue;
       addStand(p, rng() * Math.PI * 2, false);
+    }
+    // Fallen logs to hop over. Placed last so the rest of each woods keeps its layout.
+    if (def.treeStyle !== 'palm') {
+      const logs = Math.round(def.rocks * 0.4);
+      for (let i = 0; i < logs; i++) {
+        const p = this.randomPoint(6);
+        if (!isClear(p.x, p.z, 2.6)) continue;
+        const log = buildLog(rng, def.snow);
+        const yaw = rng() * Math.PI;
+        const len = log.userData.length as number;
+        const lr = log.userData.radius as number;
+        // Sit it on the terrain at both ends so it doesn't float on a slope.
+        const ax = Math.sin(yaw) * len * 0.45;
+        const az = Math.cos(yaw) * len * 0.45;
+        const hs = [this.height(p.x + ax, p.z + az), this.height(p.x - ax, p.z - az), this.height(p.x, p.z)];
+        // Only on fairly level ground: on a slope one end would float or sink out of sight.
+        if (Math.max(...hs) - Math.min(...hs) > 0.25) continue;
+        const gy = Math.min(...hs);
+        log.position.set(p.x, gy, p.z);
+        log.rotation.y = yaw;
+        this.statics.add(log);
+        // A row of small circles along its length; each knows the log's top, so a jump clears them.
+        const n = Math.max(3, Math.round(len / 0.7));
+        for (let k = 0; k < n; k++) {
+          const t = (k / (n - 1) - 0.5) * (len - lr);
+          this.colliders.push({ x: p.x + Math.sin(yaw) * t, z: p.z + Math.cos(yaw) * t, r: lr + 0.05, blocksSight: false, top: gy + (log.userData.top as number) });
+        }
+      }
     }
   }
 

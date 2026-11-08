@@ -1,6 +1,6 @@
 // In-game heads-up display (DOM overlay on top of the canvas).
 import type { AnimalDef } from './data';
-import { getLayout } from './layout';
+import { getLayout, onLayout, type Layout } from './layout';
 
 export interface ObjectiveView {
   label: string;
@@ -24,6 +24,7 @@ export class Hud {
   private objectives: HTMLDivElement;
   private timer: HTMLDivElement;
   private stealth: HTMLDivElement;
+  private offLayout: () => void;
   private stealthFill: HTMLDivElement;
   private stealthLabel: HTMLSpanElement;
   private abilityBtn: HTMLButtonElement;
@@ -100,6 +101,13 @@ export class Hud {
     this.stealth = q('.stealth');
     this.stealthFill = q('.stealth-fill');
     this.stealthLabel = q('.stealth-label');
+    // Laptop pose: the HIDDEN meter moves down into the controls panel so the view stays clear.
+    const placeStealth = (l: Layout) => {
+      const home = l.mode === 'split' ? q('.hud-panel') : q('.hud-view');
+      if (this.stealth.parentElement !== home) home.appendChild(this.stealth);
+    };
+    placeStealth(getLayout());
+    this.offLayout = onLayout(placeStealth);
     this.abilityBtn = q('.ability-btn');
     this.abilityRing = q('.ability-ring');
     this.boopBtn = q('.boop-btn');
@@ -331,6 +339,7 @@ export class Hud {
   }
 
   destroy() {
+    this.offLayout();
     this.root.remove();
   }
 }

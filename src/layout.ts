@@ -200,7 +200,29 @@ export function watchLayout() {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) kick();
   });
+  watchFootBar();
   refreshLayout();
+}
+
+/**
+ * The critter/woods pick has a GO! bar pinned to the bottom of the screen (position: fixed in menus.css;
+ * WebKit's sticky bottom stops short by the scroller's padding). Publish its height as --foot-h so the
+ * list can leave room for it.
+ */
+function watchFootBar() {
+  if (!('ResizeObserver' in window) || !('MutationObserver' in window)) return;
+  const root = document.documentElement;
+  let watched: Element | null = null;
+  const ro = new ResizeObserver(() => {
+    if (watched) root.style.setProperty('--foot-h', `${Math.ceil((watched as HTMLElement).offsetHeight)}px`);
+  });
+  new MutationObserver(() => {
+    const f = document.querySelector('.sel-foot');
+    if (f === watched) return;
+    ro.disconnect();
+    watched = f;
+    if (f) ro.observe(f);
+  }).observe(document.body, { childList: true, subtree: true });
 }
 
 /**
@@ -222,15 +244,22 @@ function applyOcclusions() {
   const root = document.documentElement;
   const { w, h } = viewportSize();
   const cut = { tl: 0, tr: 0, bl: 0, br: 0 };
+  /** Same, measured sideways: from that corner's left/right edge to past the camera. */
+  const cutx = { tl: 0, tr: 0, bl: 0, br: 0 };
   for (const r of occlusions ?? []) {
     const cx = r.x + r.w / 2;
     const cy = r.y + r.h / 2;
     const top = cy < h / 2;
-    const key = `${top ? 't' : 'b'}${cx < w / 2 ? 'l' : 'r'}` as keyof typeof cut;
+    const left = cx < w / 2;
+    const key = `${top ? 't' : 'b'}${left ? 'l' : 'r'}` as keyof typeof cut;
     // Clearance from that corner's top/bottom edge to past the camera, plus a small gap.
     cut[key] = Math.max(cut[key], Math.min(Math.round((top ? r.y + r.h : h - r.y) + 6), Math.round(h * 0.35)));
+    cutx[key] = Math.max(cutx[key], Math.min(Math.round((left ? r.x + r.w : w - r.x) + 6), Math.round(w * 0.35)));
   }
-  for (const k of Object.keys(cut) as (keyof typeof cut)[]) root.style.setProperty(`--cut-${k}`, `${cut[k]}px`);
+  for (const k of Object.keys(cut) as (keyof typeof cut)[]) {
+    root.style.setProperty(`--cut-${k}`, `${cut[k]}px`);
+    root.style.setProperty(`--cutx-${k}`, `${cutx[k]}px`);
+  }
   if (occlusions) root.dataset.occl = occlusions.length ? 'corner' : 'none';
   else delete root.dataset.occl;
   // Book pose (crease running top to bottom): menus move to one side so nothing sits on the fold.
