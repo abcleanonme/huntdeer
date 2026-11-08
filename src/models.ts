@@ -827,10 +827,39 @@ export function buildBush(color: number, rng: () => number, snow = false): THREE
 export function buildRock(rng: () => number, snow = false): THREE.Mesh {
   const r = 0.6 + rng() * 1.4;
   const m = mesh(new THREE.DodecahedronGeometry(r, 0), snow ? 0xc7d1db : 0x8a8f94, 0, r * 0.4, 0);
-  m.scale.set(1, 0.6 + rng() * 0.4, 1);
+  const sy = 0.6 + rng() * 0.4;
+  m.scale.set(1, sy, 1);
   m.rotation.y = rng() * 6;
   m.userData.radius = r * 0.9;
+  // Height of the top above the ground, a little under the true peak so a jump that looks like it clears it does.
+  m.userData.top = r * (0.4 + sy) * 0.9;
   return m;
+}
+
+/** A fallen log lying along +z: bark cylinder with lighter cut ends and a stub branch. Low enough to jump over. */
+export function buildLog(rng: () => number, snow = false): THREE.Group {
+  const g = new THREE.Group();
+  const len = 3.2 + rng() * 1.6;
+  const r = 0.28 + rng() * 0.08;
+  const bark = mesh(cyl(r, r * 1.05, len, 8), 0x6b4a2b, 0, r * 0.85, 0);
+  bark.rotation.x = Math.PI / 2;
+  g.add(bark);
+  for (const sz of [-1, 1]) {
+    const end = mesh(cyl(r * 0.85, r * 0.85, 0.04, 8), 0xc9a66b, 0, r * 0.85, (len / 2 + 0.01) * sz, false);
+    end.rotation.x = Math.PI / 2;
+    g.add(end);
+  }
+  const stub = mesh(cyl(0.06, 0.1, 0.6), 0x5b3d22, r * 0.7, r * 1.3, len * 0.15);
+  stub.rotation.z = -0.9;
+  g.add(stub);
+  if (snow) {
+    const cap = mesh(box(r * 1.2, 0.08, len * 0.9), 0xf2f6fa, 0, r * 1.8, 0, false);
+    g.add(cap);
+  }
+  g.userData.length = len;
+  g.userData.radius = r;
+  g.userData.top = r * 1.85;
+  return g;
 }
 
 export function buildFood(color: number): THREE.Group {

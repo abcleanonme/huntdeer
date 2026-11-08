@@ -11,6 +11,7 @@ import { Input } from './input';
 import {
   buildAnimal, buildDecoyCrate, buildFood, buildHatPickup, buildObjectiveItem, buildLunch, buildSecretItem, buildTrap, buildVestPickup, mat, CRATE_HEIGHT, STAND_HEIGHT, textSprite, wearDisguise, type Rig,
 } from './models';
+import { getLayout } from './layout';
 import { haptic } from './native';
 import type { HatEntry } from './save';
 import { World } from './world';
@@ -185,7 +186,7 @@ export class Game {
     this.world = new World(map, 1000 + Math.floor(Math.random() * 100000));
     const scene = this.world.scene;
     this.skyBase = new THREE.Color(map.sky);
-    this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 260);
+    this.camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 260);
 
     const rig = buildAnimal(animal.id, animal.color, animal.accent);
     scene.add(rig.root);
@@ -479,7 +480,10 @@ export class Game {
   }
 
   onResize() {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
+    const v = getLayout().view;
+    const aspect = v.w / Math.max(1, v.h);
+    this.camera.aspect = aspect;
+    this.camera.fov = fitFov(aspect);
     this.camera.updateProjectionMatrix();
   }
 
@@ -1083,7 +1087,8 @@ export class Game {
       dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       p.yaw += dy * Math.min(1, dt * 12);
     }
-    w.resolve(p.pos, p.radius, this.exitOpen);
+    // Feet height lets a jump carry the critter over low rocks and logs instead of bumping into them.
+    w.resolve(p.pos, p.radius, this.exitOpen, p.flying ? Infinity : p.pos.y);
 
     if (charging) {
       for (const h of this.hunters) {
@@ -1093,7 +1098,7 @@ export class Game {
       }
     }
 
-    const ground = w.height(p.pos.x, p.pos.z);
+    const ground = p.flying ? w.height(p.pos.x, p.pos.z) : w.supportAt(p.pos.x, p.pos.z, p.radius, p.pos.y);
     if (p.flying) {
       const targetY = ground + 11;
       p.pos.y += (targetY - p.pos.y) * Math.min(1, dt * 3);
@@ -2120,6 +2125,7 @@ export class Game {
       this.hud.setTime(this.time);
       this.hud.setAbility(p.abilityCd / this.animal.ability.cooldown, p.abilityT > 0);
       this.hud.setFlying(p.flying);
+      this.hud.setStick(this.input.stickActive);
       const bt = this.boopTarget();
       this.hud.setBoop(!!bt && (!!bt.prop || !!bt.stand || this.canBoop(bt.hunter!)));
       this.hud.setOrange(p.orangeHeld, p.orangeT / ORANGE_TIME);
@@ -2140,6 +2146,22 @@ export class Game {
       if (o instanceof THREE.Sprite) (o.material as THREE.SpriteMaterial).map?.dispose();
     });
   }
+}
+
+/**
+ * Vertical FOV for a view shape. 60 degrees suits a phone in landscape. Narrow views (portrait,
+ * split top half on a tall screen) widen it so you can still see around you, and very wide strips
+ * (laptop pose on a wide screen) narrow it so the edges don't stretch like a fisheye.
+ */
+export function fitFov(aspect: number) {
+  const rad = THREE.MathUtils.degToRad;
+  const hMin = rad(72);
+  const hMax = rad(108);
+  let v = rad(60);
+  const h = 2 * Math.atan(Math.tan(v / 2) * aspect);
+  if (h < hMin) v = 2 * Math.atan(Math.tan(hMin / 2) / aspect);
+  else if (h > hMax) v = 2 * Math.atan(Math.tan(hMax / 2) / aspect);
+  return THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(v), 40, 88);
 }
 
 /** Used by the menus to list who can show up on a map. */

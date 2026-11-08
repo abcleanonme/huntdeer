@@ -1,13 +1,13 @@
 # Shipping Huntdeer to the App Store
 
-Everything in the repo is ready (Xcode project, icon, privacy manifest, listing text, screenshots). These steps need your Apple Developer account and a Mac with Xcode 16+.
+Everything in the repo is ready (Xcode project, icon, privacy manifest, listing text, screenshots). These steps need your Apple Developer account and a Mac with Xcode 27.1 or later (iOS 27.1 SDK, for iPhone Duo support).
 
 ## 1. Check your agreements
 In App Store Connect > Business, make sure the latest Apple Developer Program License Agreement is accepted (uploads fail until it is). Only needed for a paid app: the Paid Apps agreement plus banking and tax info.
 
 ## 2. Register the app
 1. In App Store Connect (https://appstoreconnect.apple.com) > Apps > **+ New App**.
-2. Platform iOS, name **Huntdeer**, language English (U.S.), bundle ID **com.abcleanonme.huntdeer** (if it isn't in the list, create it first under Certificates, IDs & Profiles > Identifiers), SKU `huntdeer`.
+2. Platform iOS, name **Huntdeer**, language English (U.S.), bundle ID **com.abcapps.huntdeer** (if it isn't in the list, create it first under Certificates, IDs & Profiles > Identifiers), SKU `huntdeer`.
 3. If the name "Huntdeer" is taken, pick a variant (e.g. "Huntdeer: Role Reversal"); the home-screen name stays Huntdeer.
 
 ## 3. Build and upload

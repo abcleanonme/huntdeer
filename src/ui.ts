@@ -6,9 +6,22 @@ import {
 import type { GameResult } from './game';
 import { muted, sfx, toggleMute, unlockAudio } from './audio';
 import { formatHeight, PERSONALITY_LABEL, type Personality } from './hunters';
+import { getLayout, layoutPref, setLayoutPref, type LayoutPref } from './layout';
 import type { HunterLook } from './models';
 import { animalPortrait, hunterPortrait, lockedPortrait } from './portraits';
 import { totalStars, type HatEntry, type SaveData } from './save';
+
+const LAYOUT_LABEL: Record<LayoutPref, string> = {
+  auto: 'Screen: auto',
+  split: 'Screen: always split',
+  full: 'Screen: always full',
+};
+/** "auto" also says what it picked right now, so on the outer screen it reads "auto (full)". */
+const layoutLabel = () => {
+  const p = layoutPref();
+  if (p !== 'auto') return LAYOUT_LABEL[p];
+  return `Screen: auto (${getLayout().mode === 'split' ? 'split' : 'full'})`;
+};
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const starStr = (n: number, of = 3) => `<span class="stars-inline">${'<i class="st on"></i>'.repeat(n)}${'<i class="st"></i>'.repeat(of - n)}</span>`;
@@ -268,14 +281,21 @@ export class Ui {
         <p class="small">The hunters are also on a sandwich break.</p>
         <button class="big-btn resume">Resume</button>
         <button class="mid-btn mute">${muted ? 'Sound: off' : 'Sound: on'}</button>
+        <button class="mid-btn layout">${layoutLabel()}</button>
         <button class="mid-btn quit">Quit to menu</button>
       </div>`,
-      'overlay',
+      'overlay pause-screen',
     );
     this.on('.resume', onResume);
     this.on('.quit', onQuit);
     this.on('.mute', (el) => {
       el.textContent = toggleMute() ? 'Sound: off' : 'Sound: on';
+    });
+    this.on('.layout', (el) => {
+      const order: LayoutPref[] = ['auto', 'split', 'full'];
+      const next = order[(order.indexOf(layoutPref()) + 1) % order.length];
+      setLayoutPref(next);
+      el.textContent = layoutLabel();
     });
   }
 

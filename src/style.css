@@ -1,5 +1,14 @@
 /* The UI is drawn light; never let a dark color-scheme turn button text white. */
 :root {
+  --side-l: max(12px, env(safe-area-inset-left));
+  --side-r: max(12px, env(safe-area-inset-right));
+  --top: max(10px, env(safe-area-inset-top));
+  --bottom: max(14px, env(safe-area-inset-bottom));
+  /* Per-corner clearance past the iPhone Duo outer camera (set from native reserved regions). */
+  --tl-top: max(var(--top), var(--cut-tl, 0px));
+  --tr-top: max(var(--top), var(--cut-tr, 0px));
+  --bl-bottom: max(var(--bottom), var(--cut-bl, 0px));
+  --br-bottom: max(var(--bottom), var(--cut-br, 0px));
   color-scheme: only light;
   --ink: #1d1d1d;
   --cream: #fff8e7;
@@ -29,7 +38,8 @@ html, body {
 }
 
 #app { position: fixed; inset: 0; }
-canvas { display: block; width: 100%; height: 100%; }
+canvas { display: block; }
+#app > canvas { position: absolute; left: 0; top: 0; }
 
 button { font-family: var(--display); cursor: pointer; border: none; color: var(--ink); -webkit-appearance: none; appearance: none; }
 
@@ -221,7 +231,10 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 /* ---------- HUD ---------- */
 .hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; font-family: var(--display); }
 .hud button { pointer-events: auto; }
-.hud-tl { position: absolute; top: max(10px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); max-width: 55vw; }
+.hud-view { position: absolute; inset: 0; overflow: hidden; }
+.hud-panel { display: contents; }
+.pad { display: none; }
+.hud-tl { position: absolute; top: var(--tl-top); left: var(--side-l); max-width: 55vw; }
 .hearts { font-size: 30px; color: var(--red); -webkit-text-stroke: 2px var(--ink); letter-spacing: 2px; }
 .stamina { width: 130px; height: 9px; background: rgba(0, 0, 0, 0.35); border: 2px solid var(--ink); border-radius: 99px; overflow: hidden; margin-top: 2px; }
 .stamina-fill { height: 100%; background: #5fd4ff; }
@@ -244,13 +257,14 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 .bhat.gone { opacity: 0.2; }
 .boss-tip { font-family: var(--body); font-weight: 800; font-size: 13px; -webkit-text-stroke: 0; text-shadow: 0 1px 3px #000; }
 .boss-bar.vuln .boss-tip { color: var(--yellow); animation: pulse 0.5s infinite; }
-.banner { position: absolute; top: max(64px, calc(env(safe-area-inset-top) + 54px)); right: max(12px, env(safe-area-inset-right)); background: #2b2140; color: #fff; border: 3px solid var(--ink); border-left: 8px solid var(--yellow); border-radius: 12px; padding: 6px 14px; transform: translateX(130%); transition: transform 0.35s; max-width: 70vw; }
-.banner.on { transform: none; }
+.banner { position: absolute; top: max(64px, calc(env(safe-area-inset-top) + 54px)); right: max(12px, env(safe-area-inset-right)); background: #2b2140; color: #fff; border: 3px solid var(--ink); border-left: 8px solid var(--yellow); border-radius: 12px; padding: 6px 14px; transform: translateX(calc(100% + 140px)); opacity: 0; visibility: hidden; transition: transform 0.35s, opacity 0.35s, visibility 0s 0.35s; max-width: 70vw; }
+/* Hidden fully when idle: an empty banner used to peek out as a small yellow/purple pill. */
+.banner.on { transform: none; opacity: 1; visibility: visible; transition: transform 0.35s, opacity 0.2s; }
 .banner-k { font-size: 11px; color: var(--yellow); letter-spacing: 1px; text-transform: uppercase; }
 .banner-t { font-size: 20px; }
 .banner-d { font-family: var(--body); font-weight: 800; font-size: 12px; opacity: 0.8; }
 .obj.locked { opacity: 0.5; }
-.hud-tr { position: absolute; top: max(10px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); display: flex; gap: 10px; align-items: center; }
+.hud-tr { position: absolute; top: var(--tr-top); right: var(--side-r); display: flex; gap: 10px; align-items: center; }
 .timer { font-size: 24px; color: #fff; -webkit-text-stroke: 1.5px var(--ink); }
 .pause-btn { width: 44px; height: 44px; border-radius: 12px; background: #fff; border: 3px solid var(--ink); font-size: 18px; box-shadow: 0 3px 0 var(--ink); }
 
@@ -262,19 +276,7 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 .stealth.hidden .stealth-fill { background: var(--green); }
 @keyframes shake { 0%, 100% { transform: translateX(-50%); } 25% { transform: translateX(calc(-50% - 3px)); } 75% { transform: translateX(calc(-50% + 3px)); } }
 
-.pings { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
-.ping {
-  position: absolute;
-  left: -14px;
-  top: -12px;
-  width: 0;
-  height: 0;
-  border-left: 14px solid transparent;
-  border-right: 14px solid transparent;
-  border-bottom: 24px solid #fff;
-  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.8));
-  transform-origin: 14px 12px;
-}
+.pings { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
 
 .toasts { position: absolute; top: 22%; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; width: 90vw; }
 .toast { background: var(--panel); border: 3px solid var(--ink); border-radius: 14px; padding: 6px 14px; font-size: 18px; text-align: center; animation: pop 0.3s both; transition: opacity 0.5s, transform 0.5s; }
@@ -289,8 +291,10 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
 
 .hint { position: absolute; bottom: max(14px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.55); color: #fff; font-family: var(--body); font-weight: 800; font-size: 13px; padding: 6px 12px; border-radius: 99px; white-space: nowrap; transition: opacity 1s; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
 .hint.fade { opacity: 0; }
+/* The boss bar and the controls hint share the lower middle; the boss wins. */
+.boss-bar.on ~ .hint { display: none; }
 
-.hud-br { position: absolute; right: max(14px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; gap: 12px; align-items: end; }
+.hud-br { position: absolute; right: var(--side-r); bottom: var(--br-bottom); display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; gap: 12px; align-items: end; }
 .act-btn { width: 72px; height: 72px; border-radius: 50%; background: rgba(255, 255, 255, 0.85); border: 3px solid var(--ink); font-size: 14px; box-shadow: 0 4px 0 var(--ink); position: relative; overflow: hidden; color: var(--ink); }
 .act-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
 .ability-btn { grid-column: 2; grid-row: 1 / span 2; width: 96px; height: 96px; font-size: 13px; line-height: 1.1; padding: 6px; }
@@ -325,3 +329,162 @@ button { font-family: var(--display); cursor: pointer; border: none; color: var(
   .title-art img { width: 84px; height: 84px; }
   .logo { font-size: 48px; }
 }
+
+/* ---------- Split layout: laptop pose / portrait (see layout.ts) ---------- */
+/* Top: the 3D view with the overlays that belong to it. Bottom: a panel with stats and controls. */
+:root[data-layout='split'] .hud-view { bottom: auto; height: var(--view-h); }
+:root[data-layout='split'] .pad {
+  display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--panel-top);
+  height: var(--panel-h);
+  background:
+    radial-gradient(circle at var(--pad-cx, 22%) var(--pad-cy, 55%), rgba(255, 255, 255, 0.07) 0 70px, transparent 71px),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0 6px, transparent 6px 14px),
+    #24331f;
+  border-top: 4px solid var(--ink);
+  box-shadow: inset 0 6px 0 rgba(0, 0, 0, 0.25);
+  touch-action: none;
+}
+:root:not([data-playing]) .pad-hint { display: none; }
+.pad-hint {
+  position: absolute;
+  left: 22%;
+  top: 55%;
+  transform: translate(-50%, -50%);
+  color: rgba(255, 255, 255, 0.35);
+  font-family: var(--display);
+  font-size: 14px;
+  text-align: center;
+  width: 120px;
+}
+:root[data-layout='split'] .hud-panel {
+  display: flex;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--panel-top);
+  height: var(--panel-h);
+  padding: 12px max(14px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  container-type: size;
+}
+/* Wide panel (laptop pose): move area left, stats middle, buttons right. */
+:root[data-layout='split'] .hud-tl {
+  position: static;
+  max-width: none;
+  width: min(340px, 34%);
+  margin-left: 36%;
+  margin-right: auto;
+  align-self: stretch;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+:root[data-layout='split'] .hud-br { position: static; align-self: flex-end; }
+/* Timer + pause live in the panel's top-right corner in split mode. */
+:root[data-layout='split'] .hud-tr { top: 10px; right: max(14px, env(safe-area-inset-right)); }
+/* Pause menu sits on the bottom half so the paused view stays visible above. */
+:root[data-layout='split'] .screen.overlay { top: var(--panel-top); bottom: auto; height: var(--panel-h); padding: 10px 16px max(10px, env(safe-area-inset-bottom)); background: rgba(10, 15, 10, 0.75); }
+:root[data-layout='split'] .pause-screen .title-card { padding: 14px 18px; max-width: 520px; display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; align-items: end; }
+:root[data-layout='split'] .pause-screen .title-card h2, :root[data-layout='split'] .pause-screen .title-card p { grid-column: 1 / -1; margin-bottom: 4px; }
+:root[data-layout='split'] .pause-screen .big-btn { grid-column: 1 / -1; font-size: 22px; padding: 10px; }
+:root[data-layout='split'] .boss-bar { bottom: 12px; }
+:root[data-layout='split'] .hint { bottom: 10px; }
+:root[data-layout='split'] .stealth { top: max(12px, env(safe-area-inset-top)); }
+
+/* Narrow panel (portrait): stats across the top, move area and buttons underneath. */
+@container (max-width: 560px) {
+  :root[data-layout='split'] .hud-tl { position: absolute; width: auto; margin: 0; top: 10px; left: 14px; right: 130px; align-self: auto; display: flex; flex-direction: row; flex-wrap: wrap; column-gap: 12px; align-items: center; justify-content: flex-start; }
+  :root[data-layout='split'] .hud-tl .stamina { flex: 1; max-width: 160px; }
+  :root[data-layout='split'] .hud-tl .objectives, :root[data-layout='split'] .hud-tl .secret-obj { flex-basis: 100%; }
+  :root[data-layout='split'] .hud-br { position: absolute; right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); }
+}
+/* Short wide panel: shrink the buttons so they fit. */
+@container (max-height: 230px) {
+  :root[data-layout='split'] .hud-panel .act-btn { width: 60px; height: 60px; font-size: 12px; }
+  :root[data-layout='split'] .hud-panel .ability-btn { width: 80px; height: 80px; }
+  :root[data-layout='split'] .hud-panel .hud-br { gap: 8px; }
+  .hud-panel .objectives { font-size: 11px; padding: 4px 8px; }
+  .hud-panel .hearts { font-size: 22px; }
+}
+@media (max-width: 560px) {
+  :root[data-layout='split'] .pad { --pad-cx: 26%; --pad-cy: 72%; }
+  .pad-hint { top: 72%; left: 26%; }
+}
+
+/* ---------- Full layout, portrait (e.g. iPhone Duo outer screen held upright) ---------- */
+/* On the Duo outer screen iOS reports a large right safe-area inset (~84px) in portrait, which pushed
+   everything on the right far from the edge. Portrait phones only need a small corner margin on the
+   sides, so cap the side insets here. */
+:root[data-layout='full'][data-orient='portrait'] {
+  --side-l: min(max(12px, env(safe-area-inset-left)), 20px);
+  --side-r: min(max(12px, env(safe-area-inset-right)), 20px);
+  --top: max(10px, env(safe-area-inset-top));
+  --bottom: max(14px, env(safe-area-inset-bottom));
+}
+:root[data-layout='full'][data-orient='portrait'] .hud-tl { left: var(--side-l); top: var(--tl-top); max-width: calc(100% - 190px); }
+:root[data-layout='full'][data-orient='portrait'] .hearts { font-size: 22px; letter-spacing: 1px; }
+:root[data-layout='full'][data-orient='portrait'] .stamina { width: 96px; height: 7px; }
+:root[data-layout='full'][data-orient='portrait'] .objectives,
+:root[data-layout='full'][data-orient='portrait'] .secret-obj { font-size: 11px; line-height: 1.25; padding: 3px 7px; border-width: 2px; border-radius: 9px; margin-top: 4px; }
+:root[data-layout='full'][data-orient='portrait'] .obj .tick { width: 8px; height: 8px; margin-right: 4px; }
+:root[data-layout='full'][data-orient='portrait'] .hud-tr { right: var(--side-r); top: var(--tr-top); gap: 8px; }
+:root[data-layout='full'][data-orient='portrait'] .timer { font-size: 20px; }
+:root[data-layout='full'][data-orient='portrait'] .pause-btn { width: 38px; height: 38px; font-size: 15px; }
+:root[data-layout='full'][data-orient='portrait'] .stealth { left: auto; right: var(--side-r); top: calc(var(--tr-top) + 48px); transform: none; font-size: 14px; }
+:root[data-layout='full'][data-orient='portrait'] .stealth-bar { width: 120px; height: 9px; }
+:root[data-layout='full'][data-orient='portrait'] .stealth.spotted { animation: none; }
+:root[data-layout='full'][data-orient='portrait'] .banner { top: calc(var(--top) + 150px); left: var(--side-l); right: var(--side-r); max-width: none; }
+:root[data-layout='full'][data-orient='portrait'] .boss-bar { left: var(--side-l); transform: none; text-align: left; max-width: calc(100% - 200px); bottom: calc(var(--bottom) + 30px); }
+:root[data-layout='full'][data-orient='portrait'] .boss-hats { justify-content: flex-start; }
+:root[data-layout='full'][data-orient='portrait'] .hint { bottom: calc(var(--bottom) + 170px); white-space: normal; text-align: center; width: max-content; max-width: 80vw; border-radius: 14px; }
+:root[data-layout='full'][data-orient='portrait'] .toasts { top: 38%; }
+/* Buttons: one tight cluster in the bottom-right corner. */
+:root[data-layout='full'][data-orient='portrait'] .hud-br { right: var(--side-r); bottom: var(--br-bottom); gap: 8px; }
+:root[data-layout='full'][data-orient='portrait'] .act-btn { width: 60px; height: 60px; font-size: 12px; }
+:root[data-layout='full'][data-orient='portrait'] .ability-btn { width: 84px; height: 84px; font-size: 12px; }
+:root[data-layout='full'][data-orient='portrait'] .orange-btn { width: 60px; height: 60px; font-size: 11px; }
+/* Faint move-stick marker bottom-left so it's clear where to drag. */
+.move-hint { display: none; }
+:root[data-layout='full'][data-playing] .hud.touch .move-hint {
+  display: flex;
+  position: absolute;
+  left: calc(var(--side-l) + 8px);
+  bottom: calc(var(--bl-bottom) + 8px);
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 3px dashed rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.75);
+  font-family: var(--display);
+  font-size: 13px;
+  text-align: center;
+  align-items: center;
+  justify-content: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.2s;
+}
+:root[data-layout='full'][data-playing] .hud.touch.stick-on .move-hint { opacity: 0; }
+
+/* iPhone Duo: iOS reports a whole-edge inset for the corner camera. When native code tells us where
+   the camera actually is (data-occl), hug the edges and step around just that corner (--cut-*). */
+:root[data-occl] {
+  --side-l: min(max(12px, env(safe-area-inset-left)), 16px);
+  --side-r: min(max(12px, env(safe-area-inset-right)), 16px);
+}
+/* Game over / results in the laptop pose: compact so it fits the bottom half (scrolls if it must). */
+:root[data-layout='split'] .screen.overlay { align-items: flex-start; }
+:root[data-layout='split'] .screen.overlay .title-card { padding: 12px 16px; }
+:root[data-layout='split'] .screen.overlay .title-card h2 { font-size: 24px; margin-bottom: 4px; }
+:root[data-layout='split'] .screen.overlay .plaque { width: 170px; padding: 10px 8px 8px; margin: 4px auto 6px; }
+:root[data-layout='split'] .screen.overlay .plaque-img { width: 64px; height: 64px; }
+:root[data-layout='split'] .screen.overlay .stars { margin: 4px 0 6px; }
+:root[data-layout='split'] .screen.overlay .big-btn { font-size: 20px; padding: 8px; margin-top: 6px; }
+:root[data-layout='split'] .screen.overlay .mid-btn { margin-top: 8px; padding: 8px 12px; }

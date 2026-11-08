@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.abcleanonme.huntdeer',
+  appId: 'com.abcapps.huntdeer',
   appName: 'Huntdeer',
   webDir: 'dist',
   backgroundColor: '#1d2b1f',

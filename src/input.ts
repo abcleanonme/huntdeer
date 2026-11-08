@@ -19,6 +19,10 @@ export class Input {
   private joyBase: HTMLDivElement;
   private joyKnob: HTMLDivElement;
   enabled = false;
+  /** True while a finger is on the move stick. */
+  get stickActive() {
+    return this.joyId !== null;
+  }
 
   constructor(el: HTMLElement) {
     this.isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -65,6 +69,11 @@ export class Input {
       }
     });
 
+    this.addSurface(el);
+  }
+
+  /** Another element that takes joystick/look touches (the controls panel in split layout). */
+  addSurface(el: HTMLElement) {
     el.addEventListener('touchstart', (e) => this.onTouchStart(e), { passive: false });
     el.addEventListener('touchmove', (e) => this.onTouchMove(e), { passive: false });
     el.addEventListener('touchend', (e) => this.onTouchEnd(e), { passive: false });

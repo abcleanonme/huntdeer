@@ -1,5 +1,6 @@
 // In-game heads-up display (DOM overlay on top of the canvas).
 import type { AnimalDef } from './data';
+import { getLayout, onLayout, type Layout } from './layout';
 
 export interface ObjectiveView {
   label: string;
@@ -23,6 +24,7 @@ export class Hud {
   private objectives: HTMLDivElement;
   private timer: HTMLDivElement;
   private stealth: HTMLDivElement;
+  private offLayout: () => void;
   private stealthFill: HTMLDivElement;
   private stealthLabel: HTMLSpanElement;
   private abilityBtn: HTMLButtonElement;
@@ -33,8 +35,10 @@ export class Hud {
   private orangeFill: HTMLDivElement;
   private lastOrange = '';
   private toasts: HTMLDivElement;
-  private pings: HTMLDivElement;
-  private pingEls: HTMLDivElement[] = [];
+  private pings: HTMLCanvasElement;
+  private pingCtx: CanvasRenderingContext2D | null;
+  private pingSize = { w: 0, h: 0, dpr: 0 };
+  private pingsDrawn = false;
   private flash: HTMLDivElement;
   private hint: HTMLDivElement;
   private lastHearts = '';
@@ -55,29 +59,37 @@ export class Hud {
   ) {
     const r = (this.root = document.createElement('div'));
     r.className = 'hud';
+    // .hud-view overlays the 3D view; .hud-panel holds stats, timer/pause and controls. In the full layout the panel is
+    // display:contents so its children float over the view as before; in the split layout it becomes the
+    // bottom panel (see layout.ts).
     r.innerHTML = `
-      <div class="hud-tl">
-        <div class="hearts"></div>
-        <div class="stamina"><div class="stamina-fill"></div></div>
-        <div class="objectives"></div>
-        <div class="secret-obj"></div>
+      <div class="hud-view">
+        <div class="boss-bar"><div class="boss-name">THE TROPHY KING</div><div class="boss-hats"></div><div class="boss-tip"></div></div>
+        <div class="banner"></div>
+        <div class="stealth"><span class="stealth-label">HIDDEN</span><div class="stealth-bar"><div class="stealth-fill"></div></div></div>
+        <canvas class="pings"></canvas>
+        <div class="toasts"></div>
+        <div class="flash"></div>
+        <div class="hint"></div>
+        <div class="move-hint">drag here<br>to move</div>
       </div>
-      <div class="boss-bar"><div class="boss-name">THE TROPHY KING</div><div class="boss-hats"></div><div class="boss-tip"></div></div>
-      <div class="banner"></div>
-      <div class="hud-tr">
-        <div class="timer">0:00</div>
-        <button class="pause-btn" aria-label="Pause">II</button>
-      </div>
-      <div class="stealth"><span class="stealth-label">HIDDEN</span><div class="stealth-bar"><div class="stealth-fill"></div></div></div>
-      <div class="pings"></div>
-      <div class="toasts"></div>
-      <div class="flash"></div>
-      <div class="hint"></div>
-      <div class="hud-br">
-        <button class="act-btn orange-btn"><div class="orange-fill"></div><span>ORANGE</span></button>
-        <button class="act-btn boop-btn">BOOP</button>
-        <button class="act-btn jump-btn">JUMP</button>
-        <button class="act-btn ability-btn"><div class="ability-ring"></div><span>${animal.ability.name}</span></button>
+      <div class="hud-panel">
+        <div class="hud-tr">
+          <div class="timer">0:00</div>
+          <button class="pause-btn" aria-label="Pause">II</button>
+        </div>
+        <div class="hud-tl">
+          <div class="hearts"></div>
+          <div class="stamina"><div class="stamina-fill"></div></div>
+          <div class="objectives"></div>
+          <div class="secret-obj"></div>
+        </div>
+        <div class="hud-br">
+          <button class="act-btn orange-btn"><div class="orange-fill"></div><span>ORANGE</span></button>
+          <button class="act-btn boop-btn">BOOP</button>
+          <button class="act-btn jump-btn">JUMP</button>
+          <button class="act-btn ability-btn"><div class="ability-ring"></div><span>${animal.ability.name}</span></button>
+        </div>
       </div>
     `;
     parent.appendChild(r);
@@ -89,6 +101,13 @@ export class Hud {
     this.stealth = q('.stealth');
     this.stealthFill = q('.stealth-fill');
     this.stealthLabel = q('.stealth-label');
+    // Laptop pose: the HIDDEN meter moves down into the controls panel so the view stays clear.
+    const placeStealth = (l: Layout) => {
+      const home = l.mode === 'split' ? q('.hud-panel') : q('.hud-view');
+      if (this.stealth.parentElement !== home) home.appendChild(this.stealth);
+    };
+    placeStealth(getLayout());
+    this.offLayout = onLayout(placeStealth);
     this.abilityBtn = q('.ability-btn');
     this.abilityRing = q('.ability-ring');
     this.boopBtn = q('.boop-btn');
@@ -97,6 +116,7 @@ export class Hud {
     this.orangeFill = q('.orange-fill');
     this.toasts = q('.toasts');
     this.pings = q('.pings');
+    this.pingCtx = this.pings.getContext('2d');
     this.flash = q('.flash');
     this.hint = q('.hint');
     this.secretEl = q('.secret-obj');
@@ -125,7 +145,8 @@ export class Hud {
       this.hint.textContent = 'WASD move · Shift sprint · Space jump · E ability · F boop · R wear orange · Mouse look · Esc pause';
       setTimeout(() => this.hint.classList.add('fade'), 9000);
     } else {
-      this.hint.textContent = 'Left side: move (push far to sprint) · Right side: look';
+      r.classList.add('touch');
+      this.hint.textContent = getLayout().mode === 'split' ? 'Bottom left: move (push far to sprint) · Drag the view: look' : 'Left side: move (push far to sprint) · Right side: look';
       setTimeout(() => this.hint.classList.add('fade'), 7000);
     }
   }
@@ -247,28 +268,57 @@ export class Hud {
     this.orangeFill.style.height = `${(wornFrac > 0 ? wornFrac : 1) * 100}%`;
   }
 
+  /** Hide the move-stick marker while the joystick is in use. */
+  setStick(on: boolean) {
+    this.root.classList.toggle('stick-on', on);
+  }
+
   setFlying(f: boolean) {
     this.jumpBtn.classList.toggle('active', f);
   }
 
+  /**
+   * Direction arrows around the screen center. Drawn on a canvas that is fully cleared every frame:
+   * the old version moved CSS triangles with drop-shadow filters inside a 0x0 box, and iOS WebKit
+   * sometimes didn't repaint the area they left, which showed as cursor-trail style ghosts.
+   */
   setPings(pings: Ping[]) {
-    while (this.pingEls.length < pings.length) {
-      const el = document.createElement('div');
-      el.className = 'ping';
-      this.pings.appendChild(el);
-      this.pingEls.push(el);
+    const ctx = this.pingCtx;
+    if (!ctx) return;
+    if (!pings.length && !this.pingsDrawn) return;
+    const v = getLayout().view;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const sz = this.pingSize;
+    if (sz.w !== v.w || sz.h !== v.h || sz.dpr !== dpr) {
+      // Resizing the backing store also clears it.
+      this.pings.width = Math.round(v.w * dpr);
+      this.pings.height = Math.round(v.h * dpr);
+      this.pings.style.width = `${v.w}px`;
+      this.pings.style.height = `${v.h}px`;
+      this.pingSize = { w: v.w, h: v.h, dpr };
     }
-    this.pingEls.forEach((el, i) => {
-      const p = pings[i];
-      if (!p) {
-        el.style.display = 'none';
-        return;
-      }
-      el.style.display = 'block';
-      el.style.transform = `rotate(${p.angle}rad) translateY(calc(-1 * min(36vh, 36vw)))`;
-      el.style.opacity = `${0.25 + p.strength * 0.75}`;
-      el.style.borderBottomColor = p.color;
-    });
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.pings.width, this.pings.height);
+    this.pingsDrawn = pings.length > 0;
+    if (!pings.length) return;
+    // Keep the ring clear of the corner HUD clusters.
+    const radius = Math.min(v.w, v.h) * 0.3;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+    ctx.shadowBlur = 3 * dpr;
+    for (const p of pings) {
+      ctx.setTransform(dpr, 0, 0, dpr, (v.w / 2) * dpr, (v.h / 2) * dpr);
+      ctx.rotate(p.angle);
+      ctx.translate(0, -radius);
+      ctx.globalAlpha = 0.25 + p.strength * 0.75;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.moveTo(0, -12);
+      ctx.lineTo(14, 12);
+      ctx.lineTo(-14, 12);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   toast(text: string, kind: 'good' | 'bad' | 'info' | 'secret' = 'info') {
@@ -289,6 +339,7 @@ export class Hud {
   }
 
   destroy() {
+    this.offLayout();
     this.root.remove();
   }
 }

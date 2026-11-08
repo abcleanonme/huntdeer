@@ -25,7 +25,7 @@ npm run ios:sync      # build the web app and copy it into the Xcode project
 npm run ios:open      # open in Xcode, pick your team under Signing, then Run
 ```
 
-- Bundle id `com.abcleanonme.huntdeer`, universal (iPhone + iPad), iOS 15+, landscape only, full screen, status bar hidden.
+- Bundle id `com.abcapps.huntdeer`, universal (iPhone + iPad), iOS 15+, landscape (iPhone also portrait), full screen, status bar hidden.
 - Save data is mirrored to native storage (`@capacitor/preferences`) so iOS can't wipe it; hits and pickups use haptics.
 - Fonts are bundled, so the app works fully offline.
 - `npm run icons` regenerates the app icon and splash from the in-game deer model (needs Playwright).
@@ -88,3 +88,12 @@ Booped hunters drop their hat. Grab it and they go in the **Hunter Log** with we
 - `src/models.ts`: procedural low-poly models (no asset files). `src/portraits.ts`: menu portraits.
 - `src/hud.ts`, `src/ui.ts`: HUD and menus. `src/achievements.ts`: achievement rules. `src/save.ts`: progress.
 - `src/native.ts`: Capacitor bits (haptics, status bar, native save). `src/input.ts`, `src/audio.ts`: input and synthesized SFX.
+
+## Foldables (iPhone Duo) and screen layouts
+
+`src/layout.ts` picks one of two layouts and resizes the renderer to match:
+
+- **full**: the 3D view fills the screen with the HUD on top (phones in landscape, the unfolded inner screen, the outer screen).
+- **split**: the view on top, a controls + stats panel (with timer, pause and the pause menu) below. Used in the half-folded "laptop" pose. Flat portrait screens such as the Duo outer screen use **full** with a portrait HUD. On iOS the fold comes from `UIHingeInteraction` (iOS 27.1+) in `ios/App/App/SceneDelegate.swift`, passed to JS as `window.__huntdeerHinge(status, angle)`, because WKWebView doesn't expose the web Viewport Segments / Device Posture APIs (those are still checked for other browsers).
+
+Players can force either from the pause menu ("Screen: ..."). Build the iOS app with Xcode 27.1+ so iOS treats it as Duo-aware.
