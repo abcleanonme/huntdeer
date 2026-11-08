@@ -65,6 +65,11 @@ export class Input {
       }
     });
 
+    this.addSurface(el);
+  }
+
+  /** Another element that takes joystick/look touches (the controls panel in split layout). */
+  addSurface(el: HTMLElement) {
     el.addEventListener('touchstart', (e) => this.onTouchStart(e), { passive: false });
     el.addEventListener('touchmove', (e) => this.onTouchMove(e), { passive: false });
     el.addEventListener('touchend', (e) => this.onTouchEnd(e), { passive: false });

@@ -88,3 +88,12 @@ Booped hunters drop their hat. Grab it and they go in the **Hunter Log** with we
 - `src/models.ts`: procedural low-poly models (no asset files). `src/portraits.ts`: menu portraits.
 - `src/hud.ts`, `src/ui.ts`: HUD and menus. `src/achievements.ts`: achievement rules. `src/save.ts`: progress.
 - `src/native.ts`: Capacitor bits (haptics, status bar, native save). `src/input.ts`, `src/audio.ts`: input and synthesized SFX.
+
+## Foldables (iPhone Duo) and screen layouts
+
+`src/layout.ts` picks one of two layouts and resizes the renderer to match:
+
+- **full**: the 3D view fills the screen with the HUD on top (phones in landscape, the unfolded inner screen, the outer screen).
+- **split**: the view on top, a controls + stats panel below. Used in the half-folded "laptop" pose (detected through the Viewport Segments / Device Posture web APIs when WebKit reports them) and for any portrait screen.
+
+Players can force either from the pause menu ("Screen: ..."). Build the iOS app with Xcode 27.1+ so iOS treats it as Duo-aware.

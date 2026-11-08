@@ -1,6 +1,6 @@
 # Shipping Huntdeer to the App Store
 
-Everything in the repo is ready (Xcode project, icon, privacy manifest, listing text, screenshots). These steps need your Apple Developer account and a Mac with Xcode 16+.
+Everything in the repo is ready (Xcode project, icon, privacy manifest, listing text, screenshots). These steps need your Apple Developer account and a Mac with Xcode 27.1 or later (iOS 27.1 SDK, for iPhone Duo support).
 
 ## 1. Check your agreements
 In App Store Connect > Business, make sure the latest Apple Developer Program License Agreement is accepted (uploads fail until it is). Only needed for a paid app: the Paid Apps agreement plus banking and tax info.

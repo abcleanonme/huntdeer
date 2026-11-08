@@ -11,17 +11,24 @@ import { initNative, haptic } from './native';
 import { loadSave, loadSaveNative, totalStars, writeSave, type HatEntry } from './save';
 import { animalUnlocked, mapUnlocked, Ui } from './ui';
 import { sfx, unlockAudio } from './audio';
+import { getLayout, onLayout, watchLayout, type Layout } from './layout';
 
 const app = document.getElementById('app')!;
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 app.appendChild(renderer.domElement);
 
+// Split layout (laptop pose / portrait): the controls panel under the 3D view. Touches there drive the
+// joystick and look just like touches on the canvas.
+const pad = document.createElement('div');
+pad.className = 'pad';
+pad.innerHTML = '<div class="pad-hint">drag here to move</div>';
+app.appendChild(pad);
+
 const input = new Input(renderer.domElement);
+input.addSurface(pad);
 const ui = new Ui(app);
 let save = loadSave();
 let game: Game | null = null;
@@ -76,6 +83,7 @@ function startGame(animal: AnimalDef, map: MapDef) {
     secret: !!map.secret && !save.secretsDone.includes(map.id),
   });
   input.enabled = true;
+  document.documentElement.dataset.playing = '1';
 }
 
 function pause() {
@@ -96,6 +104,7 @@ function resume() {
 function toMenu() {
   game?.dispose();
   game = null;
+  delete document.documentElement.dataset.playing;
   input.enabled = false;
   input.reset();
   showTitle();
@@ -157,11 +166,17 @@ function ensureBackdrop() {
   backdrop.hud.root.style.display = 'none';
 }
 
-window.addEventListener('resize', () => {
-  renderer.setSize(window.innerWidth, window.innerHeight);
+function applyLayout(l: Layout) {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(l.view.w, l.view.h);
   game?.onResize();
   backdrop?.onResize();
-});
+  // Draw a frame right away so a fold or unfold never shows a stretched or stale picture.
+  (game ?? backdrop)?.render();
+}
+watchLayout();
+applyLayout(getLayout());
+onLayout(applyLayout);
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) pause();
