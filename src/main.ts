@@ -117,6 +117,7 @@ function showTitle() {
     log: () => ui.hunterLog(save, showTitle),
     achievements: () => ui.achievements(save, showTitle),
     caseFile: () => ui.caseFile(save, showTitle),
+    howTo: () => ui.howTo(showTitle),
   });
 }
 
